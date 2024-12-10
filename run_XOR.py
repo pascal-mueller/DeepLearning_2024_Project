@@ -53,11 +53,11 @@ net = Net()
 control_net = ControlNet()
 
 num_epochs = 15
-inner_epochs = 5
+inner_epochs = 50
 learning_rate = 0.0001
 control_lr = 0.0001
 control_threshold = 1e-8
-l1_lambda = 0.1
+l1_lambda = 0.6
 
 criterion = nn.CrossEntropyLoss()
 control_optimizer = torch.optim.Adam(control_net.parameters(), lr=float(control_lr))
