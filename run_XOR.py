@@ -54,10 +54,10 @@ control_net = ControlNet()
 
 num_epochs = 15
 inner_epochs = 50
-learning_rate = 0.0001
+learning_rate = 0.001
 control_lr = 0.0001
 control_threshold = 1e-8
-l1_lambda = 0.6
+l1_lambda = 0.5
 
 criterion = nn.CrossEntropyLoss()
 control_optimizer = torch.optim.Adam(control_net.parameters(), lr=float(control_lr))
@@ -146,40 +146,42 @@ for task_id in range(1, 4):
 
             #     epoch_losses.append(control_loss.item())
             # Update weights based on control signals
+            # Update weights based on control signals
             if total_control_loss.item() > 0.01:
-                with torch.no_grad():
-                    # Layer 1: Get pre-synaptic activities (flattened inputs)
-                    pre_activities_layer1 = net.flatten(batch_data)
+                # Layer 1: Get pre-synaptic activities (flattened inputs)
+                pre_activities_layer1 = net.flatten(batch_data)
 
-                    # Get the target signal (difference between output and label)
-                    target_signal = batch_labels - output  # [batch_size, output_size]
+                # Get the target signal (difference between output and label)
+                target_signal = batch_labels - output  # [batch_size, output_size]
 
-                    # Modulate target signal by control signals
-                    modulated_target_layer1 = control_signals[:, : net.hidden_size]
-                    weight_update_layer1 = torch.einsum(
-                        "bi,bj->ij", pre_activities_layer1, modulated_target_layer1
-                    )
+                # Modulate target signal by control signals
+                modulated_target_layer1 = control_signals[:, : net.hidden_size]
+                weight_update_layer1 = torch.einsum(
+                    "bi,bj->ij", pre_activities_layer1, modulated_target_layer1
+                )
 
-                    # Update weights for Layer 1
-                    net.layer1.weight += learning_rate * weight_update_layer1.T
+                # Set gradient for Layer 1 weights
+                net.layer1.weight.grad = -weight_update_layer1.T  # Negative gradient
 
-                    # Layer 2: Pre-synaptic activities (hidden activations after modulation)
-                    pre_activities_layer2 = net.hidden_activations(
-                        net.layer1(pre_activities_layer1)
-                    )
+                # Layer 2: Pre-synaptic activities (hidden activations after modulation)
+                pre_activities_layer2 = net.hidden_activations(
+                    net.layer1(pre_activities_layer1)
+                )
 
-                    # Modulate target signal for layer 2
-                    modulated_target_layer2 = control_signals[:, net.hidden_size :]
-                    weight_update_layer2 = torch.einsum(
-                        "bi,bj->ij", pre_activities_layer2, modulated_target_layer2
-                    )
+                # Modulate target signal for layer 2
+                modulated_target_layer2 = control_signals[:, net.hidden_size :]
+                weight_update_layer2 = torch.einsum(
+                    "bi,bj->ij", pre_activities_layer2, modulated_target_layer2
+                )
 
-                    # Update weights for Layer 2
-                    net.layer2.weight += learning_rate * weight_update_layer2.T
+                # Set gradient for Layer 2 weights
+                net.layer2.weight.grad = -weight_update_layer2.T  # Negative gradient
 
-                    net_optimizer.step()
+                # Use the optimizer to apply the gradients
+                net_optimizer.step()
+                net_optimizer.zero_grad()
 
-                epoch_losses.append(control_loss.item())
+            epoch_losses.append(control_loss.item())
 
         avg_epoch_loss = sum(epoch_losses) / len(epoch_losses) if epoch_losses else 0
         task_losses.append(avg_epoch_loss)
