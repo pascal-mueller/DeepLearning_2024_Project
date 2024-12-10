@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+
 class ModulationReLULayer(nn.Module):
     def __init__(self, size, a=1.2):
         super().__init__()
@@ -18,6 +19,7 @@ class ModulationReLULayer(nn.Module):
     def get_control_signals(self):
         return self.control_signals
 
+
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
@@ -31,18 +33,14 @@ class Net(nn.Module):
         self.layer2 = nn.Linear(self.hidden_size, self.output_size)
         self.output_activations = ModulationReLULayer(self.output_size)
 
-
-
     def forward(self, x):
         x = self.flatten(x)
-        h1 = self.layer1(x)
-        h1_activated = self.hidden_activations(h1)
-        out = self.layer2(h1_activated)
-        out_activated = self.output_activations(out)
+        h1 = self.layer1(x)  # pre-activity
+        h1_activated = self.hidden_activations(h1)  # activity
+        out = self.layer2(h1_activated)  # pre-activity
+        out_activated = self.output_activations(out)  # activity
 
         return torch.softmax(out_activated, dim=-1)
-
-
 
     def set_control_signals(self, signals):
         hidden_signals, output_signals = (
@@ -53,23 +51,17 @@ class Net(nn.Module):
         self.hidden_activations.set_control_signals(hidden_signals)
         self.output_activations.set_control_signals(output_signals)
 
-
-
     def get_hidden_features(self, x):
         x = self.flatten(x)
         h1 = self.layer1(x)
 
         return self.hidden_activations(h1).detach().numpy()
 
-
-
     def get_weights(self):
         return [
             self.layer1.weight.detach().numpy(),
             self.layer2.weight.detach().numpy(),
         ]
-
-
 
     def reset_control_signals(self):
         self.hidden_activations.set_control_signals(torch.ones(self.hidden_size))
