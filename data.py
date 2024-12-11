@@ -29,9 +29,9 @@ class ContinualLearningDataset(Dataset):
                             [0.75, 0.25],
                         ]
                     )
-
                 self.data[i] = points + torch.randn_like(points) * noise
                 self.labels[i] = 1 if i < n_samples / 2 else 0
+
         elif task_id == 2:  # Square vs Diamond
             for i in range(n_samples):
                 if i < n_samples / 2:  # Label 1: Diamond
@@ -54,6 +54,7 @@ class ContinualLearningDataset(Dataset):
                     )
                 self.data[i] = points + torch.randn_like(points) * noise
                 self.labels[i] = 1 if i < n_samples / 2 else 0
+
         elif task_id == 3:  # Close pairs vs Distant pairs
             for i in range(n_samples):
                 if i < n_samples / 2:  # Label 1: Close pairs
@@ -74,7 +75,6 @@ class ContinualLearningDataset(Dataset):
                             [0.9, 0.1],
                         ]
                     )
-
                 self.data[i] = points + torch.randn_like(points) * noise
                 self.labels[i] = 1 if i < n_samples / 2 else 0
 
@@ -82,7 +82,6 @@ class ContinualLearningDataset(Dataset):
             n = len(x)
             result = torch.zeros((n, 2))
             result[range(n), x] = 1
-
             return result
 
         self.labels = to_one_hot(self.labels.int())
@@ -112,5 +111,4 @@ class ContinualLearningDataset(Dataset):
 
 def get_dataloader(task_id, batch_size=32):
     dataset = ContinualLearningDataset(task_id)
-
     return DataLoader(dataset, batch_size=batch_size, shuffle=True)

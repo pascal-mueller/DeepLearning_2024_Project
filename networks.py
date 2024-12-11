@@ -35,11 +35,10 @@ class Net(nn.Module):
 
     def forward(self, x):
         x = self.flatten(x)
-        h1 = self.layer1(x)  # pre-activity
-        h1_activated = self.hidden_activations(h1)  # activity
-        out = self.layer2(h1_activated)  # pre-activity
-        out_activated = self.output_activations(out)  # activity
-
+        h1 = self.layer1(x)
+        h1_activated = self.hidden_activations(h1)
+        out = self.layer2(h1_activated)
+        out_activated = self.output_activations(out)
         return torch.softmax(out_activated, dim=-1)
 
     def set_control_signals(self, signals):
@@ -47,14 +46,12 @@ class Net(nn.Module):
             signals[:, : self.hidden_size],
             signals[:, self.hidden_size :],
         )
-
         self.hidden_activations.set_control_signals(hidden_signals)
         self.output_activations.set_control_signals(output_signals)
 
     def get_hidden_features(self, x):
         x = self.flatten(x)
         h1 = self.layer1(x)
-
         return self.hidden_activations(h1).detach().numpy()
 
     def get_weights(self):
