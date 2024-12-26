@@ -1,14 +1,25 @@
+import itertools
 from tqdm import tqdm
+import time
 from itertools import product
 import torch
 import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool, Process, Queue, cpu_count
+from concurrent.futures import ProcessPoolExecutor
+import optuna
+import random
 
 from networks import *
 from plot import *
 from data import *
+
+
+seed = 0
+torch.manual_seed(seed)
+np.random.seed(seed)
+random.seed(seed)
 
 
 def evaluate_model(net, control_net, eval_loader, verbose_level=0):
@@ -48,19 +59,24 @@ def evaluate_model(net, control_net, eval_loader, verbose_level=0):
 
 
 def run_all_tasks(
-    num_epochs,
-    inner_epochs,
-    learning_rate,
-    control_lr,
-    control_threshold,
-    l1_lambda,
+    params,
     verbose_level=-1,
     plot_data=False,
     seed=0,
 ):
+    (
+        num_epochs,
+        inner_epochs,
+        learning_rate,
+        control_lr,
+        control_threshold,
+        l1_lambda,
+    ) = params
     # Fix seeds
     torch.manual_seed(seed)
     np.random.seed(seed)
+    random.seed(seed)
+    torch.use_deterministic_algorithms(True)
 
     net = Net()
     control_net = ControlNet()
@@ -263,7 +279,18 @@ def run_all_tasks(
 
                         # Adjust control signal and set it
                         a_diff = control_signals - torch.ones_like(control_signals)
-                        net.set_control_signals(a_diff)
+                        # net.set_control_signals(a_diff)
+                        # TODO: Maybe we have to clip the a_diff?
+                        signal_diff_layer1 = a_diff[:, : net.hidden_size]
+                        aa = 1.2
+                        signal_diff_layer1 = torch.clamp(
+                            signal_diff_layer1, min=1.0 / aa, max=aa
+                        )
+
+                        signal_diff_layer2 = a_diff[:, net.hidden_size :]
+                        signal_diff_layer2 = torch.clamp(
+                            signal_diff_layer2, min=1.0 / aa, max=aa
+                        )
 
                         # Layer 1
                         r_pre_hidden = net.flatten(batch_data)  # r_pre
@@ -272,14 +299,18 @@ def run_all_tasks(
                         )  # r_post * a
 
                         # dw = r_pre * r_post * a
-                        dw = r_post_hidden.T @ r_pre_hidden
+                        foo = r_post_hidden * signal_diff_layer1
+                        dw = foo.T @ r_pre_hidden
+                        # dw = r_post_hidden.T @ r_pre_hidden
                         net.layer1.weight.grad = dw
 
                         # Layer 2
                         r_pre_output = r_post_hidden
                         r_post_output = net.output_activations(net.layer2(r_pre_output))
 
-                        dw = r_post_output.T @ r_pre_output
+                        foo_out = r_post_output * signal_diff_layer2
+                        dw = foo_out.T @ r_pre_output
+                        # dw = r_post_output.T @ r_pre_output
                         net.layer2.weight.grad = dw
 
                         # Update weights
@@ -314,231 +345,115 @@ def run_all_tasks(
                     f"Task {task_id} - Performance on Task {eval_task_id}: {accuracy:.2f}%"
                 )
 
-    return task_performance
+        # for foo in net.parameters():
+        #     print(foo.sum().item())
+        # for foo in control_net.parameters():
+        #     print(foo.sum().item())
+
+    return params, task_performance
 
 
-def hyperparameter_search(
-    num_epochs_list,
-    inner_epochs_list,
-    learning_rate_list,
-    control_lr_list,
-    control_threshold_list,
-    l1_lambda_list,
-):
-    """
-    Perform hyperparameter search over all combinations of given parameter lists.
+# Objective function for Optuna
+def objective(trial):
+    # Define the hyperparameter search space
+    num_epochs = trial.suggest_int("num_epochs", 100, 1500)
+    inner_epochs = trial.suggest_int("inner_epochs", 10, 100)
+    learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-1)
+    control_lr = trial.suggest_float("control_lr", 1e-5, 1e-1)
+    control_threshold = trial.suggest_float("control_threshold", 1e-11, 1e-6)
+    l1_lambda = trial.suggest_float("l1_lambda", 1e-4, 1e-1)
 
-    Args:
-        num_epochs_list (list): List of possible values for num_epochs.
-        inner_epochs_list (list): List of possible values for inner_epochs.
-        learning_rate_list (list): List of possible values for learning_rate.
-        control_lr_list (list): List of possible values for control_lr.
-        control_threshold_list (list): List of possible values for control_threshold.
-        l1_lambda_list (list): List of possible values for l1_lambda.
-
-    Returns:
-        best_params (dict): The best combination of hyperparameters.
-        best_performance (dict): Performance for the best parameters.
-    """
-    total_combinations = (
-        len(num_epochs_list)
-        * len(inner_epochs_list)
-        * len(learning_rate_list)
-        * len(control_lr_list)
-        * len(control_threshold_list)
-        * len(l1_lambda_list)
-    )
-    # Combine all parameter lists into a single list of dictionaries
-    all_combinations = product(
-        num_epochs_list,
-        inner_epochs_list,
-        learning_rate_list,
-        control_lr_list,
-        control_threshold_list,
-        l1_lambda_list,
-    )
-
-    best_params = None
-    best_performance = None
-
-    for combo in tqdm(
-        all_combinations, desc="Hyperparameter Search", total=total_combinations
-    ):
-        # Unpack parameters
-        (
-            num_epochs,
-            inner_epochs,
-            learning_rate,
-            control_lr,
-            control_threshold,
-            l1_lambda,
-        ) = combo
-
-        # Run tasks with the current hyperparameters
-        performance = run_all_tasks(
-            num_epochs=num_epochs,
-            inner_epochs=inner_epochs,
-            learning_rate=learning_rate,
-            control_lr=control_lr,
-            control_threshold=control_threshold,
-            l1_lambda=l1_lambda,
-        )
-
-        # Check if all tasks achieved 100% accuracy
-        if all(
-            acc == 100 for task_acc in performance.values() for acc in task_acc.values()
-        ):
-            print("Found optimal parameters:", combo)
-            return combo, performance
-
-        # Update best params based on cumulative accuracy
-        if best_performance is None or (
-            sum(sum(perf.values()) for perf in performance.values())
-            > sum(sum(perf.values()) for perf in best_performance.values())
-        ):
-            best_params = combo
-            best_performance = performance
-
-    return best_params, best_performance
-
-
-def run_single_combination(combo):
-    """
-    Helper function to run a single combination of hyperparameters.
-    """
-    (
+    # Run the model with the sampled parameters
+    params = (
         num_epochs,
         inner_epochs,
         learning_rate,
         control_lr,
         control_threshold,
         l1_lambda,
-    ) = combo
+    )
+    print("PARAMS = ", params)
+    _, task_performance = run_all_tasks(params, verbose_level=0)
 
-    performance = run_all_tasks(
-        num_epochs=num_epochs,
-        inner_epochs=inner_epochs,
-        learning_rate=learning_rate,
-        control_lr=control_lr,
-        control_threshold=control_threshold,
-        l1_lambda=l1_lambda,
+    # Evaluation metric: Average accuracy across tasks
+    avg_accuracy = np.mean(
+        [
+            acc
+            for task_results in task_performance.values()
+            for acc in task_results.values()
+        ]
     )
 
-    return combo, performance
+    # Goal is to maximize avg_accuracy
+    return avg_accuracy
 
 
-def hyperparameter_search_parallel(
-    num_epochs_list,
-    inner_epochs_list,
-    learning_rate_list,
-    control_lr_list,
-    control_threshold_list,
-    l1_lambda_list,
-):
-    """
-    Perform parallelized hyperparameter search over all combinations of given parameter lists.
-
-    Args:
-        num_epochs_list (list): List of possible values for num_epochs.
-        inner_epochs_list (list): List of possible values for inner_epochs.
-        learning_rate_list (list): List of possible values for learning_rate.
-        control_lr_list (list): List of possible values for control_lr.
-        control_threshold_list (list): List of possible values for control_threshold.
-        l1_lambda_list (list): List of possible values for l1_lambda.
-
-    Returns:
-        best_params (dict): The best combination of hyperparameters.
-        best_performance (dict): Performance for the best parameters.
-    """
-    total_combinations = (
-        len(num_epochs_list)
-        * len(inner_epochs_list)
-        * len(learning_rate_list)
-        * len(control_lr_list)
-        * len(control_threshold_list)
-        * len(l1_lambda_list)
-    )
-    all_combinations = list(
-        product(
-            num_epochs_list,
-            inner_epochs_list,
-            learning_rate_list,
-            control_lr_list,
-            control_threshold_list,
-            l1_lambda_list,
-        )
+# Run the Optuna study
+def run_optuna_study(num_trials, num_cpus):
+    # Use SQLite as shared storage for parallel workers
+    storage = "sqlite:///optuna_study.db"
+    study = optuna.create_study(
+        direction="maximize",
+        storage=storage,
+        study_name="hyperparameter_optimization",
+        load_if_exists=True,
     )
 
-    # Use multiprocessing pool to distribute work
-    with Pool(processes=cpu_count()) as pool:
-        results = list(
-            tqdm(
-                pool.imap(run_single_combination, all_combinations),
-                desc="Hyperparameter Search",
-                total=total_combinations,
-            )
-        )
+    # Run optimization with parallel trials
+    study.optimize(objective, n_trials=num_trials, n_jobs=num_cpus)
 
-    # Find the best parameters
-    best_params = None
-    best_performance = None
-
-    for combo, performance in results:
-        if all(
-            acc == 100 for task_acc in performance.values() for acc in task_acc.values()
-        ):
-            print("Found optimal parameters:", combo)
-            return combo, performance
-
-        if best_performance is None or (
-            sum(sum(perf.values()) for perf in performance.values())
-            > sum(sum(perf.values()) for perf in best_performance.values())
-        ):
-            best_params = combo
-            best_performance = performance
-
-    return best_params, best_performance
+    # Print and return the best results
+    print("Best parameters:", study.best_params)
+    print("Best value (accuracy):", study.best_value)
+    print("Best trial:", study.best_trial)
+    return study
 
 
 if __name__ == "__main__":
-    """
-    Best Parameters: (600, 50, 0.001, 0.001, 1e-09, 0.05)
-    Best Performance: {1: {1: 100.0}, 2: {1: 60.0, 2: 100.0}, 3: {1: 100.0, 2: 96.0, 3: 100.0}}
-    """
+    # params1 = (
+    #     355,
+    #     96,
+    #     0.031186578088439134,
+    #     0.06858824436888418,
+    #     9.310540712549254e-07,
+    #     0.04721763083723491,
+    # )
+    # """
+    #     Task 1 - Performance on Task 1: 52.00%
+    #     Task 2 - Performance on Task 1: 26.00%
+    #     Task 2 - Performance on Task 2: 48.00%
+    #     Task 3 - Performance on Task 1: 46.00%
+    #     Task 3 - Performance on Task 2: 50.00%
+    #     Task 3 - Performance on Task 3: 52.00%
+    # """
+    # print("First")
+    # run_all_tasks(params1, verbose_level=0)
+    # params2 = (
+    #     676,
+    #     89,
+    #     0.029868234667835978,
+    #     0.09440888898158813,
+    #     6.43637837977417e-08,
+    #     0.009106209860749951,
+    # )
+    # print("second")
+    # """
+    #     Task 1 - Performance on Task 1: 50.00%
+    #     Task 2 - Performance on Task 1: 36.00%
+    #     Task 2 - Performance on Task 2: 48.00%
+    #     Task 3 - Performance on Task 1: 52.00%
+    #     Task 3 - Performance on Task 2: 38.00%
+    #     Task 3 - Performance on Task 3: 54.00%
+    # """
+    # run_all_tasks(params2, verbose_level=0)
+    # quit()
+    # Configure the number of trials and CPUs
+    num_trials = 50
+    num_cpus = 1  # Adjust as needed
 
-    # -1: Print nothing
-    # 0: Print performance
-    # 1: Print loss per epoch
-    # 2: Print control signals, activities, outputs
-    verbose_level = 0
-    plot_data = True
+    # Run the study
+    study = run_optuna_study(num_trials, num_cpus)
 
-    params = (600, 50, 0.001, 0.001, 1e-09, 0.05)
-    run_all_tasks(*params, verbose_level=verbose_level, plot_data=plot_data)
-
-    quit()
-    # Define lists for each parameter
-    num_epochs_list = [300, 600]
-    inner_epochs_list = [50]
-    learning_rate_list = [0.01, 0.001, 0.0001, 0.00001]
-    control_lr_list = [0.01, 0.001, 0.0001, 0.00001]
-    control_threshold_list = [1e-9]
-    # Keep this small < 0.1 because otherwise the regularization term is too
-    # strong and it fake converges
-    l1_lambda_list = [0.001, 0.005, 0.01, 0.05, 0.1]
-
-    # Perform hyperparameter search
-    best_params, best_performance = hyperparameter_search_parallel(
-        num_epochs_list,
-        inner_epochs_list,
-        learning_rate_list,
-        control_lr_list,
-        control_threshold_list,
-        l1_lambda_list,
-    )
-
-    print("Best Parameters:", best_params)
-    print("Best Performance:", best_performance)
-
-    performance = run_all_tasks(*best_params, verbose_level=0)
-    print("Run with best params:", performance)
+    # Show the best results
+    print("Finished optimization. Best parameters:")
+    print(study.best_params)

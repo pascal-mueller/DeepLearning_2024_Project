@@ -1,6 +1,12 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import random
+
+seed = 0
+torch.manual_seed(seed)
+np.random.seed(seed)
+random.seed(seed)
 
 
 class ModulationReLULayer(nn.Module):
@@ -32,6 +38,15 @@ class Net(nn.Module):
         self.hidden_activations = ModulationReLULayer(self.hidden_size)
         self.layer2 = nn.Linear(self.hidden_size, self.output_size)
         self.output_activations = ModulationReLULayer(self.output_size)
+
+        # Initialize weights
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.kaiming_uniform_(self.layer1.weight, nonlinearity="relu")
+        nn.init.zeros_(self.layer1.bias)
+        nn.init.kaiming_uniform_(self.layer2.weight, nonlinearity="relu")
+        nn.init.zeros_(self.layer2.bias)
 
     def forward(self, x):
         x = self.flatten(x)
@@ -76,6 +91,15 @@ class ControlNet(nn.Module):
         self.relu1 = nn.ReLU()
         self.relu2 = nn.ReLU()
         self.a = a
+
+        # Initialize weights
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.kaiming_uniform_(self.layer1.weight, nonlinearity="relu")
+        nn.init.zeros_(self.layer1.bias)
+        nn.init.kaiming_uniform_(self.layer2.weight, nonlinearity="relu")
+        nn.init.zeros_(self.layer2.bias)
 
     def forward(self, x):
         x = self.layer1(x)

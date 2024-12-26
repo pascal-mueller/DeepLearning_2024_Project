@@ -1,6 +1,11 @@
 import matplotlib.pyplot as plt
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, RandomSampler
+import random
+
+seed = 0
+torch.manual_seed(seed)
+random.seed(seed)
 
 
 class ContinualLearningDataset(Dataset):
@@ -78,6 +83,8 @@ class ContinualLearningDataset(Dataset):
                 self.data[i] = points + torch.randn_like(points) * noise
                 self.labels[i] = 1 if i < n_samples / 2 else 0
 
+        # print("data sum", self.data.sum())
+
         def to_one_hot(x):
             n = len(x)
             result = torch.zeros((n, 2))
@@ -109,6 +116,17 @@ class ContinualLearningDataset(Dataset):
         plt.show()
 
 
-def get_dataloader(task_id, batch_size=32):
+def get_dataloader(task_id, batch_size=32, seed=0):
     dataset = ContinualLearningDataset(task_id)
-    return DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+    # Initialize a generator with the specified seed
+    generator = torch.Generator()
+    generator.manual_seed(seed)
+
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=True,  # Enable shuffling
+        num_workers=0,  # Single-process data loading for determinism
+        generator=generator,  # Use the generator for deterministic shuffling
+    )
