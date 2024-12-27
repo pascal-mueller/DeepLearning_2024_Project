@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 import random
 
-seed = 0
+seed = 42069
 torch.manual_seed(seed)
 np.random.seed(seed)
 random.seed(seed)

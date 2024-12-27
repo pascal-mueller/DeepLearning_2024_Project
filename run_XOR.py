@@ -358,10 +358,10 @@ def objective(trial):
     # Define the hyperparameter search space
     num_epochs = trial.suggest_int("num_epochs", 100, 1500)
     inner_epochs = trial.suggest_int("inner_epochs", 10, 100)
-    learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-1)
-    control_lr = trial.suggest_float("control_lr", 1e-5, 1e-1)
-    control_threshold = trial.suggest_float("control_threshold", 1e-11, 1e-6)
-    l1_lambda = trial.suggest_float("l1_lambda", 1e-4, 1e-1)
+    learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-1, log=True)
+    control_lr = trial.suggest_float("control_lr", 1e-5, 1e-1, log=True)
+    control_threshold = trial.suggest_float("control_threshold", 1e-11, 1e-6, log=True)
+    l1_lambda = trial.suggest_float("l1_lambda", 1e-3, 2e-1, log=True)
 
     # Run the model with the sampled parameters
     params = (
@@ -448,7 +448,7 @@ if __name__ == "__main__":
     # run_all_tasks(params2, verbose_level=0)
     # quit()
     # Configure the number of trials and CPUs
-    num_trials = 50
+    num_trials = 500
     num_cpus = 1  # Adjust as needed
 
     # Run the study

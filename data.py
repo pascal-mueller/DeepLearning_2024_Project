@@ -3,7 +3,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader, RandomSampler
 import random
 
-seed = 0
+seed = 42069
 torch.manual_seed(seed)
 random.seed(seed)
 
