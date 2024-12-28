@@ -10,6 +10,7 @@ from multiprocessing import Pool, Process, Queue, cpu_count
 from concurrent.futures import ProcessPoolExecutor
 import optuna
 import random
+import sqlite3
 
 from networks import *
 from plot import *
@@ -208,121 +209,109 @@ def run_all_tasks(
                 if total_control_loss.item() > 0.01:
                     with torch.no_grad():
                         """
-                            batch_data.shape:
-                                * [batch_size, num_points, point_dim]
-                                * [32, 4, 2]
-                            
-                            net.flatten(batch_data).shape:
-                                * [batch_size, num_points * point_dim]
-                                * [32, 8]
-                            
-                            layer1.shape:
-                                * [batch_size, hidden_size]
-                                * [32, 20]
-                            
-                            layer2.shape:
-                                * [batch_size, output_size]
-                                * [32, 2]
-                            
-                            hidden_activations.shape:
-                                * [batch_size, hidden_size]
-                                * [32, 20]
-                            
-                            output_activations.shape:
-                                * [batch_size, output_size]
-                                * [32, 2]
-                            
-                            layer1.weight.grad.shape:
-                                * [hidden_size, input_size]
-                                * [20, 8]
-                            
-                            layer2.weight.grad.shape:
-                                * [output_size, hidden_size]
-                                * [2, 20]
+                        Theory:
+                            In the paper we see that we have a multiplicative
+                            neuron model: (eq. 24)
 
+                                varphi(z,a) = phi(z) * a                    (24)
+                            
+                                whereas phi is our activation function (relu) and
+                                a is our control signal.
+                            
+                            It also gives us the weight update formula (eq. 25):
+
+                                dw = r_pre * r_post * (a - a^*)             (25)
+                                   = r_pre * (phi(z) * a) * (a - a^*)
+
+                            For a presynaptic neuron i and postsynaptic neuron j
+                            we get:
+
+                                dw_ij = x_i * [ phi( sum_i(w_ij * x_i) ) * a_j ] * (a_j - 1.0)   
+
+                            Note that this is the formula to update one specific
+                            weight of one connection between two neurons. The
+                            first neuron is the presynaptic neuron and the second
+                            neuron is the postsynaptic neuron.
+
+                            - r_pre is just the output of the first neuron (after activation)
+                            - r_post is the output of the second neuron  (after activation)
+                            - a^* is 1.0 because eq. 32 tells us 
+                              a(t) = 1 + alpha * f(t) and we want to end up with
+                              no target signal hence f(t) = 0 => a^* = 1.0
                         """
 
-                        """
-                        Implementation strategy:
-                            We basically have:
+                        # a.shape is [batch_size, hidden_size + output_size]
+                        a1 = control_signals[:, : net.hidden_size]
+                        a2 = control_signals[:, net.hidden_size :]
+                        a1_diff = a1 - torch.ones_like(a1)
+                        a2_diff = a2 - torch.ones_like(a2)
 
-                                dw = r_pre * r_post * (a - a^*)
-                                dw = r_pre * r_post * a
-                                    - r_pre * r_post * a^*
-                            
-                            Now notice that ModulationReLULayer does
-                            
-                                self.control_signals * torch.relu(x)
-                            
-                            and notice that r_post is basically the output of the
-                            ModulatioNReLuLayer. Also remember that a is basically
-                            the control signal and a^* is the baseline. I assume
-                            the baseline is 1.0. We what we can do is create an
-                            "adjusted" control signal (a - a^*), apply it to our
-                            network and reduce the equation to
+                        # Note: For the layer1 and layer2 weight updates we could
+                        # move part of the inner loop to the outer loop since it
+                        # doesn't depend on j. I just didn't do it because I figured
+                        # it might be more confusing if I did.
 
-                                dw = r_pre * r_post
+                        #
+                        # LAYER 1 WEIGHT UPDATE
+                        #
 
-                            Basically we move (a - a^*) into r_post.
+                        x = net.flatten(
+                            batch_data
+                        )  # x.shape is [batch_size, input_size]
+                        phi = net.hidden_activations(
+                            net.layer1(x)
+                        )  # phi.shape is [batch_size, hidden_size]
 
-                            Note: dw is the change in weight, not the actual update.
-                            So we set the gradient of the weight to dw and then use
-                            an optimizer to set the weight.
+                        # Loop over post-synaptic neurons (output neurons of layer 1)
+                        for i in range(net.hidden_size):
+                            # Loop over presynaptic signals (the input signals for the i-th post-synaptic neuron)
+                            for j in range(net.input_size):
+                                # Post synaptic neuron i has presynaptic signal j
+                                r_pre_i = x[:, j]  # r_pre.shape is [batch_size]
+                                # The post synaptic neuron j has output phi_i
+                                r_post = (
+                                    phi[:, i] * a1[:, i]
+                                )  # r_post.shape is [batch_size]
 
-                            Remember: An optimizer does e.g. gradient descent:
-                            
-                                weight = weight - lr * dw
-                            
-                            so we could do it by hand but why should be do that.
-                            (Sander told me to use an optimizer, so we use one ^^)
-                        """
+                                dw_i = (
+                                    r_pre_i * r_post * a1_diff[:, i]
+                                )  # dw_i.shape is [batch_size]
 
-                        # Adjust control signal and set it
-                        a_diff = control_signals - torch.ones_like(control_signals)
-                        # net.set_control_signals(a_diff)
-                        # TODO: Maybe we have to clip the a_diff?
-                        signal_diff_layer1 = a_diff[:, : net.hidden_size]
-                        aa = 1.2
-                        signal_diff_layer1 = torch.clamp(
-                            signal_diff_layer1, min=1.0 / aa, max=aa
-                        )
+                                # We take the mean because we have a batch!
+                                # Note: We set the gradient of the weight because later on
+                                # we use an optimizer to update the weight.
+                                net.layer1.weight.grad[i, j] = dw_i.mean()
 
-                        signal_diff_layer2 = a_diff[:, net.hidden_size :]
-                        signal_diff_layer2 = torch.clamp(
-                            signal_diff_layer2, min=1.0 / aa, max=aa
-                        )
+                        #
+                        # LAYER 2 WEIGHT UPDATE
+                        #
+                        x = net.hidden_activations(
+                            net.layer1(net.flatten(batch_data))
+                        )  # x.shape is [batch_size, hidden_size]
 
-                        # Layer 1
-                        r_pre_hidden = net.flatten(batch_data)  # r_pre
-                        r_post_hidden = net.hidden_activations(
-                            net.layer1(r_pre_hidden)
-                        )  # r_post * a
+                        phi = net.output_activations(
+                            net.layer2(x)
+                        )  # phi.shape is [batch_size, output_size]
 
-                        # dw = r_pre * r_post * a
-                        foo = r_post_hidden * signal_diff_layer1
-                        dw = foo.T @ r_pre_hidden
-                        # dw = r_post_hidden.T @ r_pre_hidden
-                        net.layer1.weight.grad = dw
+                        # Loop over post-synaptic neurons (output neurons of layer 2)
+                        for i in range(net.output_size):
+                            # Loop over presynaptic signals (the input signals for the i-th post-synaptic neuron)
+                            for j in range(net.hidden_size):
+                                # Post synaptic neuron i has presynaptic signal j
+                                r_pre_i = x[:, j]  # r_pre.shape is [batch_size]
+                                # The post synaptic neuron j has output phi_i
+                                r_post = (
+                                    phi[:, i] * a2[:, i]
+                                )  # r_post.shape is [batch_size]
 
-                        # Layer 2
-                        r_pre_output = r_post_hidden
-                        r_post_output = net.output_activations(net.layer2(r_pre_output))
+                                dw_i = (
+                                    r_pre_i * r_post * a2_diff[:, i]
+                                )  # dw_i.shape is [batch_size]
 
-                        foo_out = r_post_output * signal_diff_layer2
-                        dw = foo_out.T @ r_pre_output
-                        # dw = r_post_output.T @ r_pre_output
-                        net.layer2.weight.grad = dw
+                                # We take the mean because we have a batch!
+                                net.layer2.weight.grad[i, j] = dw_i.mean()
 
-                        # Update weights
                         net_optimizer.step()
-
-                        # Get pre-synaptic activities
-                        # TODO
-                        # Calculate weight updates using the control-based rule
-                        # Layer 1 updates
-                        # TODO
-                        # Layer 2 updates
-                        # TODO
 
                     epoch_losses.append(control_loss.item())
 
@@ -372,8 +361,7 @@ def objective(trial):
         control_threshold,
         l1_lambda,
     )
-    print("PARAMS = ", params)
-    _, task_performance = run_all_tasks(params, verbose_level=0)
+    _, task_performance = run_all_tasks(params, verbose_level=-1)
 
     # Evaluation metric: Average accuracy across tasks
     avg_accuracy = np.mean(
@@ -392,6 +380,9 @@ def objective(trial):
 def run_optuna_study(num_trials, num_cpus):
     # Use SQLite as shared storage for parallel workers
     storage = "sqlite:///optuna_study.db"
+    conn = sqlite3.connect("optuna_study.db")
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.close()
     study = optuna.create_study(
         direction="maximize",
         storage=storage,
@@ -428,28 +419,28 @@ if __name__ == "__main__":
     # """
     # print("First")
     # run_all_tasks(params1, verbose_level=0)
-    # params2 = (
-    #     676,
-    #     89,
-    #     0.029868234667835978,
-    #     0.09440888898158813,
-    #     6.43637837977417e-08,
-    #     0.009106209860749951,
-    # )
-    # print("second")
-    # """
-    #     Task 1 - Performance on Task 1: 50.00%
-    #     Task 2 - Performance on Task 1: 36.00%
-    #     Task 2 - Performance on Task 2: 48.00%
-    #     Task 3 - Performance on Task 1: 52.00%
-    #     Task 3 - Performance on Task 2: 38.00%
-    #     Task 3 - Performance on Task 3: 54.00%
-    # """
-    # run_all_tasks(params2, verbose_level=0)
-    # quit()
+    params2 = (
+        676,
+        89,
+        0.00029868234667835978,
+        0.009440888898158813,
+        6.43637837977417e-08,
+        0.1106209860749951,
+    )
+    print("second")
+    """
+        Task 1 - Performance on Task 1: 50.00%
+        Task 2 - Performance on Task 1: 36.00%
+        Task 2 - Performance on Task 2: 48.00%
+        Task 3 - Performance on Task 1: 52.00%
+        Task 3 - Performance on Task 2: 38.00%
+        Task 3 - Performance on Task 3: 54.00%
+    """
+    run_all_tasks(params2, verbose_level=0)
+    quit()
     # Configure the number of trials and CPUs
     num_trials = 500
-    num_cpus = 1  # Adjust as needed
+    num_cpus = 8  # Adjust as needed
 
     # Run the study
     study = run_optuna_study(num_trials, num_cpus)

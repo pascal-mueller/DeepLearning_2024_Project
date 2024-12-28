@@ -1,11 +1,5 @@
-import matplotlib.pyplot as plt
 import torch
-from torch.utils.data import Dataset, DataLoader, RandomSampler
-import random
-
-seed = 42069
-torch.manual_seed(seed)
-random.seed(seed)
+from torch.utils.data import Dataset, DataLoader
 
 
 class ContinualLearningDataset(Dataset):
@@ -18,21 +12,11 @@ class ContinualLearningDataset(Dataset):
             for i in range(n_samples):
                 if i < n_samples / 2:  # Label 1
                     points = torch.tensor(
-                        [
-                            [1.0, 0.0],
-                            [0.0, 1.0],
-                            [0.5, 0.5],
-                            [0.25, 0.75],
-                        ]
+                        [[1.0, 0.0], [0.0, 1.0], [0.5, 0.5], [0.25, 0.75]]
                     )
                 else:  # Label 0
                     points = torch.tensor(
-                        [
-                            [0.0, 0.0],
-                            [1.0, 1.0],
-                            [0.5, 0.5],
-                            [0.75, 0.25],
-                        ]
+                        [[0.0, 0.0], [1.0, 1.0], [0.5, 0.5], [0.75, 0.25]]
                     )
                 self.data[i] = points + torch.randn_like(points) * noise
                 self.labels[i] = 1 if i < n_samples / 2 else 0
@@ -41,21 +25,11 @@ class ContinualLearningDataset(Dataset):
             for i in range(n_samples):
                 if i < n_samples / 2:  # Label 1: Diamond
                     points = torch.tensor(
-                        [
-                            [0.0, 0.5],
-                            [0.5, 0.0],
-                            [0.5, 1.0],
-                            [1.0, 0.5],
-                        ]
+                        [[0.0, 0.5], [0.5, 0.0], [0.5, 1.0], [1.0, 0.5]]
                     )
                 else:  # Label 0: Square
                     points = torch.tensor(
-                        [
-                            [0.0, 0.0],
-                            [1.0, 0.0],
-                            [1.0, 1.0],
-                            [0.0, 1.0],
-                        ]
+                        [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
                     )
                 self.data[i] = points + torch.randn_like(points) * noise
                 self.labels[i] = 1 if i < n_samples / 2 else 0
@@ -64,26 +38,14 @@ class ContinualLearningDataset(Dataset):
             for i in range(n_samples):
                 if i < n_samples / 2:  # Label 1: Close pairs
                     points = torch.tensor(
-                        [
-                            [0.3, 0.3],
-                            [0.4, 0.4],
-                            [0.6, 0.6],
-                            [0.7, 0.7],
-                        ]
+                        [[0.3, 0.3], [0.4, 0.4], [0.6, 0.6], [0.7, 0.7]]
                     )
                 else:  # Label 0: Distant pairs
                     points = torch.tensor(
-                        [
-                            [0.1, 0.1],
-                            [0.9, 0.9],
-                            [0.1, 0.9],
-                            [0.9, 0.1],
-                        ]
+                        [[0.1, 0.1], [0.9, 0.9], [0.1, 0.9], [0.9, 0.1]]
                     )
                 self.data[i] = points + torch.randn_like(points) * noise
                 self.labels[i] = 1 if i < n_samples / 2 else 0
-
-        # print("data sum", self.data.sum())
 
         def to_one_hot(x):
             n = len(x)
@@ -99,34 +61,7 @@ class ContinualLearningDataset(Dataset):
     def __getitem__(self, idx):
         return self.data[idx], self.labels[idx], self.task_id
 
-    def plot(self):
-        # Separate data points by label
-        task_data = self.data.view(-1, 4, 2).numpy()
-        labels = self.labels.argmax(dim=1).numpy()
 
-        for i, (points, label) in enumerate(zip(task_data, labels)):
-            points = points.reshape(-1, 2)
-            color = "blue" if label == 0 else "red"
-            plt.scatter(points[:, 0], points[:, 1], color=color, alpha=0.5)
-
-        plt.title(f"Task {self.task_id} Data Visualization")
-        plt.xlabel("X")
-        plt.ylabel("Y")
-        plt.grid(True)
-        plt.show()
-
-
-def get_dataloader(task_id, batch_size=32, seed=0):
+def get_dataloader(task_id, batch_size=32):
     dataset = ContinualLearningDataset(task_id)
-
-    # Initialize a generator with the specified seed
-    generator = torch.Generator()
-    generator.manual_seed(seed)
-
-    return DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=True,  # Enable shuffling
-        num_workers=0,  # Single-process data loading for determinism
-        generator=generator,  # Use the generator for deterministic shuffling
-    )
+    return DataLoader(dataset, batch_size=batch_size, shuffle=True)

@@ -1,17 +1,12 @@
 import torch
 import torch.nn as nn
 import numpy as np
-import random
-
-seed = 42069
-torch.manual_seed(seed)
-np.random.seed(seed)
-random.seed(seed)
 
 
 class ModulationReLULayer(nn.Module):
     def __init__(self, size, a=1.2):
         super().__init__()
+
         self.size = size
         self.a = a
         self.control_signals = torch.ones(size)
@@ -29,24 +24,15 @@ class ModulationReLULayer(nn.Module):
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
+
         self.input_size = 8
         self.hidden_size = 20
         self.output_size = 2
-
         self.flatten = nn.Flatten()
         self.layer1 = nn.Linear(self.input_size, self.hidden_size)
         self.hidden_activations = ModulationReLULayer(self.hidden_size)
         self.layer2 = nn.Linear(self.hidden_size, self.output_size)
         self.output_activations = ModulationReLULayer(self.output_size)
-
-        # Initialize weights
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        nn.init.kaiming_uniform_(self.layer1.weight, nonlinearity="relu")
-        nn.init.zeros_(self.layer1.bias)
-        nn.init.kaiming_uniform_(self.layer2.weight, nonlinearity="relu")
-        nn.init.zeros_(self.layer2.bias)
 
     def forward(self, x):
         x = self.flatten(x)
@@ -54,6 +40,7 @@ class Net(nn.Module):
         h1_activated = self.hidden_activations(h1)
         out = self.layer2(h1_activated)
         out_activated = self.output_activations(out)
+
         return torch.softmax(out_activated, dim=-1)
 
     def set_control_signals(self, signals):
@@ -61,12 +48,14 @@ class Net(nn.Module):
             signals[:, : self.hidden_size],
             signals[:, self.hidden_size :],
         )
+
         self.hidden_activations.set_control_signals(hidden_signals)
         self.output_activations.set_control_signals(output_signals)
 
     def get_hidden_features(self, x):
         x = self.flatten(x)
         h1 = self.layer1(x)
+
         return self.hidden_activations(h1).detach().numpy()
 
     def get_weights(self):
@@ -90,16 +79,8 @@ class ControlNet(nn.Module):
         self.layer2 = nn.Linear(self.hidden_size, self.output_size)
         self.relu1 = nn.ReLU()
         self.relu2 = nn.ReLU()
+
         self.a = a
-
-        # Initialize weights
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        nn.init.kaiming_uniform_(self.layer1.weight, nonlinearity="relu")
-        nn.init.zeros_(self.layer1.bias)
-        nn.init.kaiming_uniform_(self.layer2.weight, nonlinearity="relu")
-        nn.init.zeros_(self.layer2.bias)
 
     def forward(self, x):
         x = self.layer1(x)
