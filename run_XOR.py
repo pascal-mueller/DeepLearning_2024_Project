@@ -379,7 +379,9 @@ def objective(trial):
 # Run the Optuna study
 def run_optuna_study(num_trials, num_cpus):
     # Use SQLite as shared storage for parallel workers
-    storage = "sqlite:///optuna_study.db"
+    storage = (
+        "sqlite:///example.db?check_same_thread=False&pool_size=20&max_overflow=48"
+    )
     conn = sqlite3.connect("optuna_study.db")
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.close()
@@ -401,46 +403,25 @@ def run_optuna_study(num_trials, num_cpus):
 
 
 if __name__ == "__main__":
-    # params1 = (
-    #     355,
-    #     96,
-    #     0.031186578088439134,
-    #     0.06858824436888418,
-    #     9.310540712549254e-07,
-    #     0.04721763083723491,
-    # )
-    # """
-    #     Task 1 - Performance on Task 1: 52.00%
-    #     Task 2 - Performance on Task 1: 26.00%
-    #     Task 2 - Performance on Task 2: 48.00%
-    #     Task 3 - Performance on Task 1: 46.00%
-    #     Task 3 - Performance on Task 2: 50.00%
-    #     Task 3 - Performance on Task 3: 52.00%
-    # """
-    # print("First")
-    # run_all_tasks(params1, verbose_level=0)
-    params2 = (
-        676,
-        89,
-        0.00029868234667835978,
-        0.009440888898158813,
-        6.43637837977417e-08,
-        0.1106209860749951,
-    )
-    print("second")
-    """
-        Task 1 - Performance on Task 1: 50.00%
-        Task 2 - Performance on Task 1: 36.00%
-        Task 2 - Performance on Task 2: 48.00%
-        Task 3 - Performance on Task 1: 52.00%
-        Task 3 - Performance on Task 2: 38.00%
-        Task 3 - Performance on Task 3: 54.00%
-    """
-    run_all_tasks(params2, verbose_level=0)
+    # You can run the XOR experiment with a specifi set of hyperparams:
+    params = {
+        "num_epochs": 600,
+        "inner_epochs": 10,
+        "learning_rate": 0.0001,
+        "control_lr": 0.0001,
+        "control_threshold": 1e-8,
+        "l1_lambda": 0.01,
+    }
+    run_all_tasks(params.values(), verbose_level=0)
+
+    # Remove
     quit()
+
+    # Or you can start a hyperparameter optimization study with Optuna:
     # Configure the number of trials and CPUs
-    num_trials = 500
-    num_cpus = 8  # Adjust as needed
+    num_trials = 1000
+    # Adjust as needed, max is 48 (change storage string abvoe to increase max)
+    num_cpus = 8
 
     # Run the study
     study = run_optuna_study(num_trials, num_cpus)
