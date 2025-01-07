@@ -73,6 +73,7 @@ def run_all_tasks(
         control_threshold,
         l1_lambda,
     ) = params
+
     # Fix seeds
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -88,7 +89,7 @@ def run_all_tasks(
     all_losses = []
     task_performance = {}
 
-    for task_id in tqdm(range(1, 4), desc="Tasks", disable=(verbose_level <= 0)):
+    for task_id in range(1, 4):
         dataloader = get_dataloader(task_id)
 
         if plot_data:
@@ -96,12 +97,14 @@ def run_all_tasks(
 
         task_losses = []
 
-        for epoch in tqdm(
+        pbar = tqdm(
             range(num_epochs),
             desc=f"Task {task_id} Epochs",
             leave=False,
             disable=(verbose_level <= 0),
-        ):
+        )
+
+        for epoch in pbar:
             epoch_losses = []
             for batch_data, batch_labels, _ in dataloader:
                 # Get current network activities
@@ -119,10 +122,13 @@ def run_all_tasks(
                     range(inner_epochs),
                     desc="Inner Epochs",
                     leave=False,
-                    disable=(verbose_level <= 0),
+                    disable=(True or verbose_level <= 0),
                 ):
                     control_optimizer.zero_grad()
 
+                    # Question: Why do we get the target signal for these
+                    # activities? Shouldn't he take the target signal wtt to the
+                    # inputs of ReLu layers?
                     control_signals = control_net(current_activities)
                     net.set_control_signals(control_signals)
 
@@ -138,11 +144,13 @@ def run_all_tasks(
                     total_control_loss.backward()
                     control_optimizer.step()
                     if abs(prev_loss - total_control_loss.item()) < control_threshold:
-                        if verbose_level >= 1:
+                        if verbose_level >= 2:
                             print("  Converged at epoch", inner_epoch)
                         break
 
-                    prev_loss = total_control_loss.item()
+                        prev_loss = total_control_loss.item()
+
+                    epoch_losses.append(control_loss.item())
 
                 # Update weights based on control signals
                 """
@@ -243,8 +251,11 @@ def run_all_tasks(
                         # a.shape is [batch_size, hidden_size + output_size]
                         a1 = control_signals[:, : net.hidden_size]
                         a2 = control_signals[:, net.hidden_size :]
-                        a1_diff = a1 - torch.ones_like(a1)
-                        a2_diff = a2 - torch.ones_like(a2)
+                        # Question: How to figure out baseline?
+                        baseline_a1 = torch.ones_like(a1) * 1.0
+                        baseline_a2 = torch.ones_like(a2) * 1.0
+                        a1_diff = a1 - baseline_a1
+                        a2_diff = a2 - baseline_a2
 
                         # Note: For the layer1 and layer2 weight updates we could
                         # move part of the inner loop to the outer loop since it
@@ -255,32 +266,38 @@ def run_all_tasks(
                         # LAYER 1 WEIGHT UPDATE
                         #
 
-                        x = net.flatten(
-                            batch_data
-                        )  # x.shape is [batch_size, input_size]
-                        phi = net.hidden_activations(
-                            net.layer1(x)
-                        )  # phi.shape is [batch_size, hidden_size]
+                        # x.shape is [batch_size, input_size]
+                        x = net.flatten(batch_data)
+
+                        # phi.shape is [batch_size, hidden_size]
+                        phi = net.hidden_activations(net.layer1(x))
+
+                        # Question: Do we actually use the control signal
+                        # correctly? Should we maybe use
+                        # set_control_signal()?
 
                         # Loop over post-synaptic neurons (output neurons of layer 1)
                         for i in range(net.hidden_size):
                             # Loop over presynaptic signals (the input signals for the i-th post-synaptic neuron)
                             for j in range(net.input_size):
                                 # Post synaptic neuron i has presynaptic signal j
-                                r_pre_i = x[:, j]  # r_pre.shape is [batch_size]
+                                r_pre_j = x[:, j]  # r_pre.shape is [batch_size]
+
+                                # Question: Is r_post = phi*a really true?
+
                                 # The post synaptic neuron j has output phi_i
                                 r_post = (
                                     phi[:, i] * a1[:, i]
                                 )  # r_post.shape is [batch_size]
 
-                                dw_i = (
-                                    r_pre_i * r_post * a1_diff[:, i]
+                                dw_ij = (
+                                    r_pre_j * r_post * a1_diff[:, i]
                                 )  # dw_i.shape is [batch_size]
 
                                 # We take the mean because we have a batch!
                                 # Note: We set the gradient of the weight because later on
                                 # we use an optimizer to update the weight.
-                                net.layer1.weight.grad[i, j] = dw_i.mean()
+                                net.layer1.weight.grad[i, j] = dw_ij.mean()
 
                         #
                         # LAYER 2 WEIGHT UPDATE
@@ -289,9 +306,20 @@ def run_all_tasks(
                             net.layer1(net.flatten(batch_data))
                         )  # x.shape is [batch_size, hidden_size]
 
-                        phi = net.output_activations(
-                            net.layer2(x)
-                        )  # phi.shape is [batch_size, output_size]
+                        # Question: phi here isn't the same as net(data) because
+                        # after the ReLu there's also a softmax. Above in
+                        # current_activities they use net(data) as the activities.
+                        # So maybe I have to do the same here?
+
+                        # phi = net.output_activations(
+                        #     net.layer2(x)
+                        # )  # phi.shape is [batch_size, output_size]
+
+                        # Question: Do we need the above phi or this one?
+                        # The difference is, the later is just a softmax
+                        # applied to the former, which is the real output of
+                        # net.
+                        phi = net(batch_data)
 
                         # Loop over post-synaptic neurons (output neurons of layer 2)
                         for i in range(net.output_size):
@@ -299,6 +327,7 @@ def run_all_tasks(
                             for j in range(net.hidden_size):
                                 # Post synaptic neuron i has presynaptic signal j
                                 r_pre_i = x[:, j]  # r_pre.shape is [batch_size]
+
                                 # The post synaptic neuron j has output phi_i
                                 r_post = (
                                     phi[:, i] * a2[:, i]
@@ -313,14 +342,13 @@ def run_all_tasks(
 
                         net_optimizer.step()
 
-                    epoch_losses.append(control_loss.item())
-
             avg_epoch_loss = (
                 sum(epoch_losses) / len(epoch_losses) if epoch_losses else 0
             )
             task_losses.append(avg_epoch_loss)
             if epoch % 1 == 0 and verbose_level >= 1:
-                print(f"Epoch {epoch}, Loss: {avg_epoch_loss:.4f}")
+                pbar.set_postfix(avg_epoch_loss=avg_epoch_loss)
+                # print(f"Epoch {epoch}, Loss: {avg_epoch_loss:.4f}")
 
         all_losses.extend(task_losses)
 
@@ -345,11 +373,11 @@ def run_all_tasks(
 # Objective function for Optuna
 def objective(trial):
     # Define the hyperparameter search space
-    num_epochs = trial.suggest_int("num_epochs", 100, 1500)
+    num_epochs = trial.suggest_int("num_epochs", 10, 200)
     inner_epochs = trial.suggest_int("inner_epochs", 10, 100)
-    learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-1, log=True)
-    control_lr = trial.suggest_float("control_lr", 1e-5, 1e-1, log=True)
-    control_threshold = trial.suggest_float("control_threshold", 1e-11, 1e-6, log=True)
+    learning_rate = trial.suggest_float("learning_rate", 1e-3, 1e-1, log=True)
+    control_lr = trial.suggest_float("control_lr", 1e-3, 1e-1, log=True)
+    control_threshold = trial.suggest_float("control_threshold", 1e-8, 1e-3, log=True)
     l1_lambda = trial.suggest_float("l1_lambda", 1e-3, 2e-1, log=True)
 
     # Run the model with the sampled parameters
@@ -361,7 +389,7 @@ def objective(trial):
         control_threshold,
         l1_lambda,
     )
-    _, task_performance = run_all_tasks(params, verbose_level=-1)
+    _, task_performance = run_all_tasks(params, verbose_level=0)
 
     # Evaluation metric: Average accuracy across tasks
     avg_accuracy = np.mean(
@@ -379,9 +407,7 @@ def objective(trial):
 # Run the Optuna study
 def run_optuna_study(num_trials, num_cpus):
     # Use SQLite as shared storage for parallel workers
-    storage = (
-        "sqlite:///example.db?check_same_thread=False&pool_size=20&max_overflow=48"
-    )
+    storage = "sqlite:///study.db?check_same_thread=False&pool_size=20&max_overflow=48"
     conn = sqlite3.connect("optuna_study.db")
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.close()
@@ -402,19 +428,34 @@ def run_optuna_study(num_trials, num_cpus):
     return study
 
 
+def avg(data):
+    values = [value for subdict in data.values() for value in subdict.values()]
+    print("Avg Perf.: ", sum(values) / len(values))
+
+
 if __name__ == "__main__":
+    # 75%
+    # params1 = {
+    #     "num_epochs": 150,
+    #     "inner_epochs": 50,
+    #     "learning_rate": 0.001,
+    #     "control_lr": 0.001,
+    #     "control_threshold": 1e-3,
+    #     "l1_lambda": 0.01,
+    # }
     # You can run the XOR experiment with a specifi set of hyperparams:
-    params = {
-        "num_epochs": 600,
-        "inner_epochs": 10,
-        "learning_rate": 0.0001,
-        "control_lr": 0.0001,
-        "control_threshold": 1e-8,
+    params1 = {
+        "num_epochs": 30,
+        "inner_epochs": 50,
+        "learning_rate": 0.001,
+        "control_lr": 0.001,
+        "control_threshold": 1e-3,
         "l1_lambda": 0.01,
     }
-    run_all_tasks(params.values(), verbose_level=0)
+    _, perf = run_all_tasks(params1.values(), verbose_level=1, plot_data=True)
+    avg(perf)
 
-    # Remove
+    # # Remove
     quit()
 
     # Or you can start a hyperparameter optimization study with Optuna:

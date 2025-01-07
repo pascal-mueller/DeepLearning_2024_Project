@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import torch
 from torch.utils.data import Dataset, DataLoader
 
@@ -60,6 +61,22 @@ class ContinualLearningDataset(Dataset):
 
     def __getitem__(self, idx):
         return self.data[idx], self.labels[idx], self.task_id
+
+    def plot(self):
+        # Separate data points by label
+        task_data = self.data.view(-1, 4, 2).numpy()
+        labels = self.labels.argmax(dim=1).numpy()
+
+        for i, (points, label) in enumerate(zip(task_data, labels)):
+            points = points.reshape(-1, 2)
+            color = "blue" if label == 0 else "red"
+            plt.scatter(points[:, 0], points[:, 1], color=color, alpha=0.5)
+
+        plt.title(f"Task {self.task_id} Data Visualization")
+        plt.xlabel("X")
+        plt.ylabel("Y")
+        plt.grid(True)
+        plt.show()
 
 
 def get_dataloader(task_id, batch_size=32):
