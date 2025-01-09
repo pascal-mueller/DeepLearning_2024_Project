@@ -5,7 +5,7 @@ import numpy as np
 import optuna
 import random
 import sqlite3
-
+from torchviz import make_dot
 from nn.Net import Net
 from nn.ControlNet import ControlNet
 from dataloaders.ContinualLearningDataset import get_dataloader
@@ -124,25 +124,54 @@ def run_all_tasks(
                     # activities? Shouldn't he take the target signal wtt to the
                     # inputs of ReLu layers?
                     control_signals = control_net(current_activities)
+
+                    # ATTENTION: This is implemented by
+                    #      self.control_signals * torch.relu(x)
+                    # whereas control_signals comes from control_net and
+                    # x comes from net.
+                    #
+                    # !! The multiplication connects the computational graph
+                    # of control_net with the computational graph of net.
+                    #
+                    # If we do total_control_loss.backward() later, it
+                    # will backpropagate through this connected comp. graph.
+                    # This means it will update weight.grad for both layer!
+                    #
+                    # Now this shouldn't be a problem because we overwrite
+                    # net's weight.grad later on manually.
+                    #
+                    # The big question is: Do the weight.grad change due to the
+                    # changed comp. graph?
                     net.set_control_signals(control_signals)
+
+                    # params = {
+                    #     **dict(net.named_parameters()),
+                    #     **dict(control_net.named_parameters()),
+                    # }
 
                     if verbose_level >= 2:
                         print("Control signals", control_signals.mean())
 
-                    output = net(batch_data)
+                    output = net(batch_data)  # net is excluded from the graph
                     control_loss = criterion(output, batch_labels)
-                    l1_reg = l1_lambda * sum(
-                        (output - 1).abs().sum() for output in net(batch_data)
+                    # graph = make_dot(control_loss, params=params)
+                    # graph.render("combined_computational_graph", format="pdf")
+                    l1_reg = (
+                        l1_lambda
+                        * (net(batch_data) - batch_labels).abs().sum(dim=1).mean()
                     )
+
                     total_control_loss = control_loss + l1_reg
+
                     total_control_loss.backward()
                     control_optimizer.step()
+
                     if abs(prev_loss - total_control_loss.item()) < control_threshold:
                         if verbose_level >= 2:
                             print("  Converged at epoch", inner_epoch)
                         break
 
-                        prev_loss = total_control_loss.item()
+                    prev_loss = total_control_loss.item()
 
                     epoch_losses.append(control_loss.item())
 
@@ -246,8 +275,9 @@ def run_all_tasks(
                         a1 = control_signals[:, : net.hidden_size]
                         a2 = control_signals[:, net.hidden_size :]
                         # Question: How to figure out baseline?
-                        baseline_a1 = torch.ones_like(a1) * 1.0
-                        baseline_a2 = torch.ones_like(a2) * 1.0
+                        # A: Sander said just take 1.0
+                        baseline_a1 = torch.ones_like(a1)
+                        baseline_a2 = torch.ones_like(a2)
                         a1_diff = a1 - baseline_a1
                         a2_diff = a2 - baseline_a2
 
@@ -272,17 +302,17 @@ def run_all_tasks(
 
                         # Loop over post-synaptic neurons (output neurons of layer 1)
                         for i in range(net.hidden_size):
+                            # Question: Is r_post = phi*a really true?
+
+                            # The post synaptic neuron j has output phi_i
+                            r_post = (
+                                phi[:, i] * a1[:, i]
+                            )  # r_post.shape is [batch_size]
+
                             # Loop over presynaptic signals (the input signals for the i-th post-synaptic neuron)
                             for j in range(net.input_size):
                                 # Post synaptic neuron i has presynaptic signal j
                                 r_pre_j = x[:, j]  # r_pre.shape is [batch_size]
-
-                                # Question: Is r_post = phi*a really true?
-
-                                # The post synaptic neuron j has output phi_i
-                                r_post = (
-                                    phi[:, i] * a1[:, i]
-                                )  # r_post.shape is [batch_size]
 
                                 dw_ij = (
                                     r_pre_j * r_post * a1_diff[:, i]
@@ -305,27 +335,28 @@ def run_all_tasks(
                         # current_activities they use net(data) as the activities.
                         # So maybe I have to do the same here?
 
-                        # phi = net.output_activations(
-                        #     net.layer2(x)
-                        # )  # phi.shape is [batch_size, output_size]
+                        phi = net.output_activations(
+                            net.layer2(x)
+                        )  # phi.shape is [batch_size, output_size]
 
                         # Question: Do we need the above phi or this one?
                         # The difference is, the later is just a softmax
                         # applied to the former, which is the real output of
                         # net.
-                        phi = net(batch_data)
+                        # A: I doubt it's correct.
+                        # phi = net(batch_data)
 
                         # Loop over post-synaptic neurons (output neurons of layer 2)
                         for i in range(net.output_size):
+                            # The post synaptic neuron j has output phi_i
+                            r_post = (
+                                phi[:, i] * a2[:, i]
+                            )  # r_post.shape is [batch_size]
+
                             # Loop over presynaptic signals (the input signals for the i-th post-synaptic neuron)
                             for j in range(net.hidden_size):
                                 # Post synaptic neuron i has presynaptic signal j
                                 r_pre_i = x[:, j]  # r_pre.shape is [batch_size]
-
-                                # The post synaptic neuron j has output phi_i
-                                r_post = (
-                                    phi[:, i] * a2[:, i]
-                                )  # r_post.shape is [batch_size]
 
                                 dw_i = (
                                     r_pre_i * r_post * a2_diff[:, i]
@@ -368,9 +399,9 @@ def run_all_tasks(
 def objective(trial):
     # Define the hyperparameter search space
     num_epochs = trial.suggest_int("num_epochs", 10, 200)
-    inner_epochs = trial.suggest_int("inner_epochs", 10, 100)
-    learning_rate = trial.suggest_float("learning_rate", 1e-3, 1e-1, log=True)
-    control_lr = trial.suggest_float("control_lr", 1e-3, 1e-1, log=True)
+    inner_epochs = trial.suggest_int("inner_epochs", 10, 200)
+    learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-1, log=True)
+    control_lr = trial.suggest_float("control_lr", 1e-6, 1e-1, log=True)
     control_threshold = trial.suggest_float("control_threshold", 1e-8, 1e-3, log=True)
     l1_lambda = trial.suggest_float("l1_lambda", 1e-3, 2e-1, log=True)
 
@@ -383,7 +414,7 @@ def objective(trial):
         control_threshold,
         l1_lambda,
     )
-    _, task_performance = run_all_tasks(params, verbose_level=0)
+    _, task_performance = run_all_tasks(params, verbose_level=-1)
 
     # Evaluation metric: Average accuracy across tasks
     avg_accuracy = np.mean(
@@ -428,25 +459,19 @@ def avg(data):
 
 
 if __name__ == "__main__":
-    # 75%
-    # params1 = {
-    #     "num_epochs": 150,
-    #     "inner_epochs": 50,
-    #     "learning_rate": 0.001,
-    #     "control_lr": 0.001,
-    #     "control_threshold": 1e-3,
-    #     "l1_lambda": 0.01,
-    # }
     # You can run the XOR experiment with a specifi set of hyperparams:
-    params1 = {
-        "num_epochs": 30,
+
+    # params_75_to_80 should give between 75% and 80%
+    params_75_to_80 = {
+        "num_epochs": 86,
         "inner_epochs": 50,
-        "learning_rate": 0.001,
-        "control_lr": 0.001,
-        "control_threshold": 1e-3,
-        "l1_lambda": 0.01,
+        "learning_rate": 5.740229923548619e-06,
+        "control_lr": 0.00017419201936184192,
+        "control_threshold": 0.0005192301553601519,
+        "l1_lambda": 0.007533898129929821,
     }
-    _, perf = run_all_tasks(params1.values(), verbose_level=1, plot_data=True)
+
+    _, perf = run_all_tasks(params_75_to_80.values(), verbose_level=1, plot_data=False)
     avg(perf)
 
     # # Remove
