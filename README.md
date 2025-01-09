@@ -5,6 +5,13 @@
 3. pip install -r requirements.txt
 3. python run_XOR.py
 
+# Run
+E.g. do `python -m experiments.target_learning.run_XOR`
+
+Note: Don't you `python <path>`.
+
+We could make a `main.py` or something at the root level.
+
 # Attention
 Note 1:
 This currently does not pass 100% accuracy for all thet tasks. I have no idea
