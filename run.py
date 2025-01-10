@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+import argparse
+import json
+import os
+import sys
+from pprint import pprint
+
+from experiments.target_learning import full_XOR
+from experiments.target_learning import light_XOR
+
+
+def print_info(message):
+    print(f"\033[92m[INFO]\033[0m {message}")  # Green
+
+
+def print_warning(message):
+    print(f"\033[93m[WARNING]\033[0m {message}")  # Yellow
+
+
+def print_error(message):
+    print(f"\033[91m[ERROR]\033[0m {message}")  # Red
+
+
+def ensure_db_extension(dbname):
+    """
+    Ensures that the dbname ends with '.db'. If not, appends '.db'.
+
+    Args:
+        dbname (str): The original database name.
+
+    Returns:
+        str: The database name guaranteed to end with '.db'.
+    """
+    if not dbname.lower().endswith(".db"):
+        dbname += ".db"
+    return dbname
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description="Run specified deep learning experiments with optional parameters or parameter search."
+    )
+
+    # Required argument for specifying the experiment name
+    parser.add_argument(
+        "--name",
+        required=True,
+        help="Name of the experiment (e.g., 'tl_full_XOR', 'tl_light_XOR').",
+    )
+
+    # Create a mutually exclusive group for --params and --paramsearch,
+    # allowing the user to provide either or neither
+    exclusive_group = parser.add_mutually_exclusive_group()
+
+    exclusive_group.add_argument(
+        "--params",
+        type=str,
+        default=None,
+        help="Path to JSON file with parameters for a single run (optional).",
+    )
+
+    # --paramsearch can optionally take a file
+    exclusive_group.add_argument(
+        "--paramsearch",
+        nargs="?",
+        const=True,
+        default=False,
+        help=(
+            "Run a parameter search. "
+            "If given without a file, use default search space; "
+            "if a file is specified, use that search config."
+        ),
+    )
+
+    # The following arguments only make sense if paramsearch is used
+    parser.add_argument(
+        "--dbname",
+        type=str,
+        default=None,
+        help="Optional DB name to store param search results (only if --paramsearch).",
+    )
+    parser.add_argument(
+        "-n",
+        "--num_cores",
+        type=int,
+        default=1,
+        help="Number of cores to use in param search (only if --paramsearch).",
+    )
+    parser.add_argument(
+        "--num_trials",
+        type=int,
+        default=100,
+        help="Number of trials to run in parameter search (only if --paramsearch).",
+    )
+    parser.add_argument(
+        "--studyname",
+        type=str,
+        default=None,
+        help="Name of the study (only if --paramsearch is used). Defaults to 'hyperparameter_optimization'.",
+    )
+
+    args = parser.parse_args()
+
+    # ------------------------------------------------------------------
+    # Validation Logic
+    # ------------------------------------------------------------------
+
+    # Enforce that --dbname, --num_cores, --num_trials, and --studyname
+    # cannot be used unless --paramsearch is specified
+    if not args.paramsearch and (
+        args.dbname is not None
+        or args.num_cores != 1
+        or args.num_trials != 100
+        or args.studyname is not None
+    ):
+        parser.error(
+            "The arguments --dbname, --num_cores, --num_trials, and --studyname are only valid if --paramsearch is specified."
+        )
+
+    # If --paramsearch is used and --dbname is not provided, set dbname to --name
+    if args.paramsearch and args.dbname is None:
+        args.dbname = args.name
+        print_info(f"--dbname not provided. Using --name '{args.name}' as dbname.")
+
+    # If --paramsearch is used and --studyname is not provided, set it to default
+    if args.paramsearch and args.studyname is None:
+        args.studyname = "hyperparameter_optimization"
+        print_info(
+            f"--studyname not provided. Using default study name '{args.studyname}'."
+        )
+
+    # Enforce that --studyname cannot be used without --paramsearch
+    if args.studyname is not None and not args.paramsearch:
+        parser.error(
+            "The argument --studyname is only valid if --paramsearch is specified."
+        )
+
+    # Final Validation for --num_trials
+    if args.paramsearch and args.num_trials <= 0:
+        parser.error("--num_trials must be a positive integer.")
+
+    args.dbname = ensure_db_extension(args.dbname)
+
+    return args
+
+
+def run_experiment(experiment_name: str, params: dict):
+    """
+    A wrapper to run the selected experiment.
+    Adjust this to call whatever function your
+    experiment script provides.
+    """
+    if params is None:
+        params = full_XOR.BEST_PARAMS
+    else:
+        raise NotImplementedError("params argument not implemented yet")
+
+    if experiment_name == "tl_full_XOR":
+        print(f"Running experiment: {experiment_name} with params:\n")
+        pprint(params)
+        print("\n")
+        _, perf, avg_perf = full_XOR.run_experiment(params, verbose_level=1)
+        print(f"\nAverage Performance: {avg_perf}")
+
+        return
+
+    if experiment_name == "light_XOR":
+        raise NotImplementedError("light_XOR experiment not implemented yet")
+
+    print_error(f"Unknown experiment: {experiment_name}")
+
+    return
+
+
+def run_paramsearch(
+    experiment_name: str, num_trials: int, num_cores: int, dbname: str, studyname: str
+):
+    if experiment_name == "tl_full_XOR":
+        print(f"Running parameter search for experiment: {experiment_name} using")
+        print(f" > Number of trials: {num_trials}")
+        print(f" > Number of cores: {num_cores}")
+        print(f" > DB Name: {dbname}")
+        print(f" > Study Name: {studyname}")
+
+        full_XOR.run_optuna_study(num_trials, num_cores, dbname, studyname)
+
+        return
+
+    if experiment_name == "light_XOR":
+        raise NotImplementedError("light_XOR paramsearch not implemented yet")
+
+    print_error(f"Unknown experiment: {experiment_name}")
+
+    return
+
+
+if __name__ == "__main__":
+    args = parse_arguments()
+
+    # 2. If paramsearch is enabled, run the search, else run a single experiment
+    if args.paramsearch:
+        run_paramsearch(
+            args.name, args.num_trials, args.num_cores, args.dbname, args.studyname
+        )
+    else:
+        run_experiment(args.name, args.params)
