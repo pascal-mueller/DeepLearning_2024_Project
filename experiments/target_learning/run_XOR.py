@@ -26,10 +26,13 @@ def evaluate_model(net, control_net, eval_loader, verbose_level=0):
             if verbose_level >= 2:
                 print("Eval", eval_data.shape, eval_labels)
             h1 = net.layer1(net.flatten(eval_data))
+            out = net.layer2(net.hidden_activations(h1))
             output = net(eval_data)
             if verbose_level >= 2:
                 print("Output", output)
-            current_activities = torch.cat([net.flatten(eval_data), h1, output], dim=1)
+            current_activities = torch.cat(
+                [net.flatten(eval_data), h1, out, output], dim=1
+            )
 
             if verbose_level >= 2:
                 print("Current activities", current_activities)
@@ -106,8 +109,9 @@ def run_all_tasks(
                     net.reset_control_signals()
                     h1 = net.layer1(net.flatten(batch_data))
                     output = net(batch_data)
+                    out = net.layer2(net.hidden_activations(h1))
                     current_activities = torch.cat(
-                        [net.flatten(batch_data), h1, output], dim=1
+                        [net.flatten(batch_data), h1, out, output], dim=1
                     )
 
                 # Inner loop - Training the control network
@@ -471,7 +475,16 @@ if __name__ == "__main__":
         "l1_lambda": 0.007533898129929821,
     }
 
-    _, perf = run_all_tasks(params_75_to_80.values(), verbose_level=1, plot_data=False)
+    params_78_to_82 = {
+        "num_epochs": 30,
+        "inner_epochs": 54,
+        "learning_rate": 3.900671053825562e-06,
+        "control_lr": 0.0008621989600943697,
+        "control_threshold": 1.3565492056080836e-08,
+        "l1_lambda": 0.0011869059296583477,
+    }
+
+    _, perf = run_all_tasks(params_78_to_82.values(), verbose_level=1, plot_data=False)
     avg(perf)
 
     # # Remove
