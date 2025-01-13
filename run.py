@@ -5,9 +5,6 @@ import os
 import sys
 from pprint import pprint
 
-from experiments.target_learning import full_XOR
-from experiments.target_learning import light_XOR
-
 
 def print_info(message):
     print(f"\033[92m[INFO]\033[0m {message}")  # Green
@@ -175,27 +172,36 @@ def parse_arguments():
 
 
 def run_paramsearch(
-    experiment_name: str, num_trials: int, num_cores: int, dbname: str, studyname: str
+    experiment_name: str,
+    run_name,
+    num_trials: int,
+    num_cores: int,
+    dbname: str,
+    studyname: str,
 ):
     if experiment_name == "tl_full_XOR":
+        from experiments.target_learning import full_XOR
+
         print(f"Running parameter search for experiment: {experiment_name} using")
         print(f" > Number of trials: {num_trials}")
         print(f" > Number of cores: {num_cores}")
         print(f" > DB Name: {dbname}")
         print(f" > Study Name: {studyname}")
 
-        full_XOR.run_optuna_study(num_trials, num_cores, dbname, studyname)
+        full_XOR.run_optuna_study(run_name, num_trials, num_cores, dbname, studyname)
 
         return
 
-    if experiment_name == "tl_light_XOR":
+    if experiment_name == "bp_full_XOR":
+        from experiments.backprop import full_XOR
+
         print(f"Running parameter search for experiment: {experiment_name} using")
         print(f" > Number of trials: {num_trials}")
         print(f" > Number of cores: {num_cores}")
         print(f" > DB Name: {dbname}")
         print(f" > Study Name: {studyname}")
 
-        light_XOR.run_optuna_study(num_trials, num_cores, dbname, studyname)
+        full_XOR.run_optuna_study(run_name, num_trials, num_cores, dbname, studyname)
 
         return
 
@@ -222,7 +228,12 @@ def run_experiment(
             "params argument not implemented yet. You can go to the experiment in the experiments folder and replace BEST_PARAMS. Those are currently used when running the experiment."
         )
 
+    #
+    # TARGET LEARNING EXPERIMENTS
+    #
     if experiment_name == "tl_full_XOR":
+        from experiments.target_learning import full_XOR
+
         params = full_XOR.BEST_PARAMS
         print(f"Running experiment: {experiment_name} with params:\n")
         pprint(params)
@@ -239,12 +250,24 @@ def run_experiment(
 
         return
 
-    if experiment_name == "tl_light_XOR":
-        params = light_XOR.BEST_PARAMS
+    #
+    # BACKPROP EXPERIMENTS
+    #
+    if experiment_name == "bp_full_XOR":
+        from experiments.backprop import full_XOR
+
+        params = full_XOR.BEST_PARAMS
         print(f"Running experiment: {experiment_name} with params:\n")
         pprint(params)
         print("\n")
-        _, perf, avg_perf = light_XOR.run_experiment(params, verbose_level=1)
+        _, perf, avg_perf = full_XOR.run_experiment(
+            params,
+            run_name=run_name,
+            plot_data=plot_data,
+            plot_losses=plot_losses,
+            plot_fim=plot_fim,
+            verbose_level=1,
+        )
         print(f"\nAverage Performance: {avg_perf}")
 
         return
@@ -260,7 +283,12 @@ if __name__ == "__main__":
     # 2. If paramsearch is enabled, run the search, else run a single experiment
     if args.paramsearch:
         run_paramsearch(
-            args.name, args.num_trials, args.num_cores, args.dbname, args.studyname
+            args.name,
+            args.run_name,
+            args.num_trials,
+            args.num_cores,
+            args.dbname,
+            args.studyname,
         )
     else:
         run_experiment(

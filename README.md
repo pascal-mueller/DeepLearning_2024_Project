@@ -12,6 +12,17 @@ Note: Don't you `python <path>`.
 
 We could make a `main.py` or something at the root level.
 
+Results are stored in `./results/<exp_name>/<run_name>`
+
+## Examples:
+
+Run backprop XOR: `./run.py --name bp_full_XOR --run_name "test_run_0"`
+Run param search for backprop XOR
+- `./run.py --name bp_full_XOR --paramsearch --run_name param_search_0 --num_cores 8 --num_trials 8`
+
+Run target learning XOR: `./run.py --name tl_full_XOR --run_name "test_run_0"`
+Run param search for target learning XOR
+- `./run.py --name tl_full_XOR --paramsearch --run_name param_search_0 --num_cores 8 --num_trials 8`
 # Attention
 Note 1:
 This currently does not pass 100% accuracy for all thet tasks. I have no idea

@@ -345,7 +345,7 @@ def run_experiment(
 
 
 # Objective function for Optuna
-def objective(trial):
+def objective(trial, run_name):
     # Define the hyperparameter search space
     num_epochs = trial.suggest_int("num_epochs", 10, 200)
     inner_epochs = trial.suggest_int("inner_epochs", 10, 200)
@@ -363,7 +363,9 @@ def objective(trial):
         "control_threshold": control_threshold,
         "l1_lambda": l1_lambda,
     }
-    _, task_performance, avg_perf = run_experiment(params, verbose_level=-1)
+    _, task_performance, avg_perf = run_experiment(
+        params, run_name=run_name, verbose_level=-1
+    )
 
     # Evaluation metric: Average accuracy across tasks
     # avg_accuracy = np.mean(
@@ -380,16 +382,21 @@ def objective(trial):
 
 # Run the Optuna study
 def run_optuna_study(
-    num_trials, num_cpus, dbname="paramsearch", study_name="hyperparameter_optimization"
+    run_name,
+    num_trials,
+    num_cpus,
+    dbname="paramsearch",
+    study_name="hyperparameter_optimization",
 ):
+    from functools import partial
+
     assert num_cpus <= 48, "Max 48 CPUs supported for SQLite storage"
 
-    results_dir = "results"
+    results_dir = os.path.join("results/tl_full_XOR", run_name)
     os.makedirs(results_dir, exist_ok=True)
     db_path = os.path.join(results_dir, dbname)
 
     # Use SQLite as shared storage for parallel workers
-
     storage = (
         f"sqlite:///{db_path}?check_same_thread=False&pool_size=20&max_overflow=48"
     )
@@ -403,8 +410,10 @@ def run_optuna_study(
         load_if_exists=True,
     )
 
+    objective_ = partial(objective, run_name=run_name)
+
     # Run optimization with parallel trials
-    study.optimize(objective, n_trials=num_trials, n_jobs=num_cpus)
+    study.optimize(objective_, n_trials=num_trials, n_jobs=num_cpus)
 
     # Print and return the best results
     print("Best parameters:", study.best_params)
