@@ -168,6 +168,11 @@ def parse_arguments():
     if args.dbname is not None:
         args.dbname = ensure_db_extension(args.dbname)
 
+    if not isinstance(args.paramsearch, bool):
+        raise NotImplementedError(
+            "File-based parameter search not implemented yet. Run it without a file and change the settings in: experiment::objective()"
+        )
+
     return args
 
 

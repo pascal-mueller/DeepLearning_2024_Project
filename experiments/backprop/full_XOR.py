@@ -206,6 +206,7 @@ def run_optuna_study(
     print("Best parameters:", study.best_params)
     print("Best value (accuracy):", study.best_value)
     print("Best trial:", study.best_trial)
+
     return study
 
 
