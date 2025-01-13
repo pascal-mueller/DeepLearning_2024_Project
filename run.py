@@ -48,6 +48,13 @@ def parse_arguments():
         help="Name of the experiment (e.g., 'tl_full_XOR', 'tl_light_XOR').",
     )
 
+    # Required argument for specifying the experiment name
+    parser.add_argument(
+        "--run_name",
+        required=True,
+        help="Name of the experiment run (e.g., 'tl_full_XOR_run_1', 'tl_light_XOR_run_3'). This is used to save the results of the run in ./results/exp_name/run_name.",
+    )
+
     # Create a mutually exclusive group for --params and --paramsearch,
     # allowing the user to provide either or neither
     exclusive_group = parser.add_mutually_exclusive_group()
@@ -70,6 +77,23 @@ def parse_arguments():
             "If given without a file, use default search space; "
             "if a file is specified, use that search config."
         ),
+    )
+
+    # Add flags for plotting
+    parser.add_argument(
+        "--plot_losses",
+        action="store_true",
+        help="Plot training losses (only valid if --paramsearch is not specified).",
+    )
+    parser.add_argument(
+        "--plot_data",
+        action="store_true",
+        help="Plot data (only valid if --paramsearch is not specified).",
+    )
+    parser.add_argument(
+        "--plot_fim",
+        action="store_true",
+        help="Plot Fisher Information Metric (only valid if --paramsearch is not specified).",
     )
 
     # The following arguments only make sense if paramsearch is used
@@ -98,7 +122,6 @@ def parse_arguments():
         default=None,
         help="Name of the study (only if --paramsearch is used). Defaults to 'hyperparameter_optimization'.",
     )
-
     args = parser.parse_args()
 
     # ------------------------------------------------------------------
@@ -115,6 +138,12 @@ def parse_arguments():
     ):
         parser.error(
             "The arguments --dbname, --num_cores, --num_trials, and --studyname are only valid if --paramsearch is specified."
+        )
+
+    # Validate that plotting flags cannot be used with --paramsearch
+    if args.paramsearch and (args.plot_losses or args.plot_data or args.plot_fim):
+        parser.error(
+            "The flags --plot_losses, --plot_data, and --plot_fim cannot be used together with --paramsearch."
         )
 
     # If --paramsearch is used and --dbname is not provided, set dbname to --name
@@ -139,37 +168,10 @@ def parse_arguments():
     if args.paramsearch and args.num_trials <= 0:
         parser.error("--num_trials must be a positive integer.")
 
-    args.dbname = ensure_db_extension(args.dbname)
+    if args.dbname is not None:
+        args.dbname = ensure_db_extension(args.dbname)
 
     return args
-
-
-def run_experiment(experiment_name: str, params: dict):
-    """
-    A wrapper to run the selected experiment.
-    Adjust this to call whatever function your
-    experiment script provides.
-    """
-    if params is None:
-        params = full_XOR.BEST_PARAMS
-    else:
-        raise NotImplementedError("params argument not implemented yet")
-
-    if experiment_name == "tl_full_XOR":
-        print(f"Running experiment: {experiment_name} with params:\n")
-        pprint(params)
-        print("\n")
-        _, perf, avg_perf = full_XOR.run_experiment(params, verbose_level=1)
-        print(f"\nAverage Performance: {avg_perf}")
-
-        return
-
-    if experiment_name == "light_XOR":
-        raise NotImplementedError("light_XOR experiment not implemented yet")
-
-    print_error(f"Unknown experiment: {experiment_name}")
-
-    return
 
 
 def run_paramsearch(
@@ -186,8 +188,66 @@ def run_paramsearch(
 
         return
 
-    if experiment_name == "light_XOR":
-        raise NotImplementedError("light_XOR paramsearch not implemented yet")
+    if experiment_name == "tl_light_XOR":
+        print(f"Running parameter search for experiment: {experiment_name} using")
+        print(f" > Number of trials: {num_trials}")
+        print(f" > Number of cores: {num_cores}")
+        print(f" > DB Name: {dbname}")
+        print(f" > Study Name: {studyname}")
+
+        light_XOR.run_optuna_study(num_trials, num_cores, dbname, studyname)
+
+        return
+
+    print_error(f"Unknown experiment: {experiment_name}")
+
+    return
+
+
+def run_experiment(
+    experiment_name: str,
+    params: dict,
+    run_name: str,
+    plot_losses: bool = False,
+    plot_data: bool = False,
+    plot_fim: bool = False,
+):
+    """
+    A wrapper to run the selected experiment.
+    Adjust this to call whatever function your
+    experiment script provides.
+    """
+    if params is not None:
+        raise NotImplementedError(
+            "params argument not implemented yet. You can go to the experiment in the experiments folder and replace BEST_PARAMS. Those are currently used when running the experiment."
+        )
+
+    if experiment_name == "tl_full_XOR":
+        params = full_XOR.BEST_PARAMS
+        print(f"Running experiment: {experiment_name} with params:\n")
+        pprint(params)
+        print("\n")
+        _, perf, avg_perf = full_XOR.run_experiment(
+            params,
+            run_name=run_name,
+            plot_data=plot_data,
+            plot_losses=plot_losses,
+            plot_fim=plot_fim,
+            verbose_level=1,
+        )
+        print(f"\nAverage Performance: {avg_perf}")
+
+        return
+
+    if experiment_name == "tl_light_XOR":
+        params = light_XOR.BEST_PARAMS
+        print(f"Running experiment: {experiment_name} with params:\n")
+        pprint(params)
+        print("\n")
+        _, perf, avg_perf = light_XOR.run_experiment(params, verbose_level=1)
+        print(f"\nAverage Performance: {avg_perf}")
+
+        return
 
     print_error(f"Unknown experiment: {experiment_name}")
 
@@ -203,4 +263,11 @@ if __name__ == "__main__":
             args.name, args.num_trials, args.num_cores, args.dbname, args.studyname
         )
     else:
-        run_experiment(args.name, args.params)
+        run_experiment(
+            args.name,
+            args.params,
+            args.run_name,
+            args.plot_losses,
+            args.plot_data,
+            args.plot_fim,
+        )

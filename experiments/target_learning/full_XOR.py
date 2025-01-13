@@ -9,8 +9,12 @@ import sqlite3
 from torchviz import make_dot
 from nn.Net import Net
 from nn.ControlNet import ControlNet
-from dataloaders.ContinualLearningDataset import get_dataloader
-
+from dataloaders.XORDataset import get_dataloaders
+from utils.save_model_with_grads import save_model_with_grads
+from utils.fisher_information_metric import plot_FIM
+from utils.plot_losses import plot_losses as plot_losses_fn
+from utils.plot_subset import plot_subset as plot_subset_fn
+from utils.plot_data import plot_dataloaders
 
 seed = 0
 torch.manual_seed(seed)
@@ -74,9 +78,12 @@ def avg(data):
 
 def run_experiment(
     params,
+    run_name,
     verbose_level=-1,
-    plot_data=False,
     seed=0,
+    plot_data=False,
+    plot_losses=False,
+    plot_fim=False,
 ):
     (
         num_epochs,
@@ -87,7 +94,11 @@ def run_experiment(
         l1_lambda,
     ) = params.values()
 
-    # Fix seedso
+    results_dir = os.path.join("results", "tl_full_XOR", run_name)
+    os.makedirs(results_dir, exist_ok=True)
+
+    # Fix seeds
+    # TODO: Make sure we fixed all possible randomness
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
@@ -102,11 +113,43 @@ def run_experiment(
     all_losses = []
     task_performance = {}
 
+    dataloaders = {"train": [], "test": []}
     for task_id in range(1, 4):
-        dataloader = get_dataloader(task_id)
+        train_loader, test_loader = get_dataloaders(task_id)
+        dataloaders["train"].append(train_loader)
+        dataloaders["test"].append(test_loader)
 
         if plot_data:
-            dataloader.dataset.plot()
+            plot_subset_fn(
+                train_loader.dataset,
+                results_dir,
+                filename=f"task_{task_id}_train_data.png",
+                title=f"Task {task_id} Train Data",
+            )
+            plot_subset_fn(
+                test_loader.dataset,
+                results_dir=results_dir,
+                filename=f"task_{task_id}_test_data.png",
+                title=f"Task {task_id} Test Data",
+            )
+
+    if plot_data:
+        plot_dataloaders(
+            dataloaders["train"],
+            results_dir,
+            filename="train_data.png",
+            title="Train Data",
+        )
+        plot_dataloaders(
+            dataloaders["test"],
+            results_dir,
+            filename="test_data.png",
+            title="Test Data",
+        )
+
+    for task_id in range(1, 4):
+        train_loader = dataloaders["train"][task_id - 1]
+        test_loader = dataloaders["test"][task_id - 1]
 
         task_losses = []
 
@@ -119,7 +162,7 @@ def run_experiment(
 
         for epoch in pbar:
             epoch_losses = []
-            for batch_data, batch_labels, _ in dataloader:
+            for batch_data, batch_labels, _ in train_loader:
                 # Get current network activities
                 with torch.no_grad():
                     net.reset_control_signals()
@@ -145,23 +188,6 @@ def run_experiment(
                     # inputs of ReLu layers?
                     control_signals = control_net(current_activities)
 
-                    # ATTENTION: This is implemented by
-                    #      self.control_signals * torch.relu(x)
-                    # whereas control_signals comes from control_net and
-                    # x comes from net.
-                    #
-                    # !! The multiplication connects the computational graph
-                    # of control_net with the computational graph of net.
-                    #
-                    # If we do total_control_loss.backward() later, it
-                    # will backpropagate through this connected comp. graph.
-                    # This means it will update weight.grad for both layer!
-                    #
-                    # Now this shouldn't be a problem because we overwrite
-                    # net's weight.grad later on manually.
-                    #
-                    # The big question is: Do the weight.grad change due to the
-                    # changed comp. graph?
                     net.set_control_signals(control_signals)
 
                     # params = {
@@ -183,7 +209,11 @@ def run_experiment(
 
                     total_control_loss = control_loss + l1_reg
 
+                    # Note: This does BP over the connected graph of
+                    # net and control_net!
                     total_control_loss.backward()
+
+                    # Note: This only updates the weights for control_net!
                     control_optimizer.step()
 
                     if abs(prev_loss - total_control_loss.item()) < control_threshold:
@@ -196,115 +226,17 @@ def run_experiment(
                     epoch_losses.append(control_loss.item())
 
                 # Update weights based on control signals
-                """
-                Above we trained the control network for the current state of the
-                bio network. The control signal is at the beginning very strong
-                i.e. the control_net helps net a lot.
-                We now will update the weights of net. Then repeat this until the 
-                network doesn't need any help anymore i.e. the control signal is
-                small.
-
-                We update weights using equiation 15 from the paper:
-
-                    delta_w = r_pre * phi( sum_i_pre[ w_i * r_i ] ) * ( a - a^* )
-
-                where:
-                    - delta_w: new weight change i.e. its gradient.
-                                E.g. net.layer1.weight.grad
-                    - r_pre:
-                    - phi: activation function
-                    - i_pre: presynaptic neuron index
-                    - w_i * r_i: postsynaptic potential (bias implied)
-                    - a: apical input
-                    - a^*: baseline apical input
-                
-                additionally:
-                    - phi*a: r_post
-                    - phi*a^*: baseline r_post
-
-                Note: For the above we used the typical pyramidal neuron model:
-                    - apical:
-                        * receives control signal
-                        * Single dendrite receiving feedback signal from higher
-                            brain areas.
-                    - basal:
-                        * feedforward signals
-                        * Dendrites receiving feedforward signals from the previous
-                        layer.
-                    - axon:
-                        * r_pre
-                        * output of neuron
-                        * Long output dendrite transmitting signal to other neurons.
-                
-                Note: Bias
-                From Sander:
-                 > You can add biases, usually omitted in the equation because
-                 > its implicit. (technically speaking the bias of a neuron is
-                 > something added to make the flow of variance throughout the
-                 > network correct, there are no explicit bias ‘parameters' in
-                 > biological neurons (you do have biases but not trainable))
-
-                Note:
-                    - Naming convention pre and post is not based on the temporal flow
-                    - The terms presynaptic (pre) and postsynaptic (post) describe
-                    the relationship across a synapse:
-                    - Presynaptic neuron: The neuron sending the signal via its axon
-                    to another neuron.
-                    - Postsynaptic neuron: The neuron receiving the signal at its
-                    dendrites or soma.
-                    
-                    In short:
-                    - "input" => post
-                    - "output" => pre
-                """
                 if total_control_loss.item() > 0.01:
                     with torch.no_grad():
-                        """
-                        Theory:
-                            In the paper we see that we have a multiplicative
-                            neuron model: (eq. 24)
-
-                                varphi(z,a) = phi(z) * a                    (24)
-                            
-                                whereas phi is our activation function (relu) and
-                                a is our control signal.
-                            
-                            It also gives us the weight update formula (eq. 25):
-
-                                dw = r_pre * r_post * (a - a^*)             (25)
-                                   = r_pre * (phi(z) * a) * (a - a^*)
-
-                            For a presynaptic neuron i and postsynaptic neuron j
-                            we get:
-
-                                dw_ij = x_i * [ phi( sum_i(w_ij * x_i) ) * a_j ] * (a_j - 1.0)   
-
-                            Note that this is the formula to update one specific
-                            weight of one connection between two neurons. The
-                            first neuron is the presynaptic neuron and the second
-                            neuron is the postsynaptic neuron.
-
-                            - r_pre is just the output of the first neuron (after activation)
-                            - r_post is the output of the second neuron  (after activation)
-                            - a^* is 1.0 because eq. 32 tells us 
-                              a(t) = 1 + alpha * f(t) and we want to end up with
-                              no target signal hence f(t) = 0 => a^* = 1.0
-                        """
-
                         # a.shape is [batch_size, hidden_size + output_size]
                         a1 = control_signals[:, : net.hidden_size]
                         a2 = control_signals[:, net.hidden_size :]
-                        # Question: How to figure out baseline?
-                        # A: Sander said just take 1.0
+
+                        # Sander said, we can use 1.0 as the baseline
                         baseline_a1 = torch.ones_like(a1)
                         baseline_a2 = torch.ones_like(a2)
                         a1_diff = a1 - baseline_a1
                         a2_diff = a2 - baseline_a2
-
-                        # Note: For the layer1 and layer2 weight updates we could
-                        # move part of the inner loop to the outer loop since it
-                        # doesn't depend on j. I just didn't do it because I figured
-                        # it might be more confusing if I did.
 
                         #
                         # LAYER 1 WEIGHT UPDATE
@@ -316,14 +248,8 @@ def run_experiment(
                         # phi.shape is [batch_size, hidden_size]
                         phi = net.hidden_activations(net.layer1(x))
 
-                        # Question: Do we actually use the control signal
-                        # correctly? Should we maybe use
-                        # set_control_signal()?
-
                         # Loop over post-synaptic neurons (output neurons of layer 1)
                         for i in range(net.hidden_size):
-                            # Question: Is r_post = phi*a really true?
-
                             # The post synaptic neuron j has output phi_i
                             r_post = (
                                 phi[:, i] * a1[:, i]
@@ -338,7 +264,7 @@ def run_experiment(
                                     r_pre_j * r_post * a1_diff[:, i]
                                 )  # dw_i.shape is [batch_size]
 
-                                # We take the mean because we have a batch!
+                                # Note: We take the mean because we have a batch!
                                 # Note: We set the gradient of the weight because later on
                                 # we use an optimizer to update the weight.
                                 net.layer1.weight.grad[i, j] = dw_ij.mean()
@@ -350,21 +276,9 @@ def run_experiment(
                             net.layer1(net.flatten(batch_data))
                         )  # x.shape is [batch_size, hidden_size]
 
-                        # Question: phi here isn't the same as net(data) because
-                        # after the ReLu there's also a softmax. Above in
-                        # current_activities they use net(data) as the activities.
-                        # So maybe I have to do the same here?
-
                         phi = net.output_activations(
                             net.layer2(x)
                         )  # phi.shape is [batch_size, output_size]
-
-                        # Question: Do we need the above phi or this one?
-                        # The difference is, the later is just a softmax
-                        # applied to the former, which is the real output of
-                        # net.
-                        # A: I doubt it's correct.
-                        # phi = net(batch_data)
 
                         # Loop over post-synaptic neurons (output neurons of layer 2)
                         for i in range(net.output_size):
@@ -393,24 +307,37 @@ def run_experiment(
             task_losses.append(avg_epoch_loss)
             if epoch % 1 == 0 and verbose_level >= 1:
                 pbar.set_postfix(avg_epoch_loss=avg_epoch_loss)
-                # print(f"Epoch {epoch}, Loss: {avg_epoch_loss:.4f}")
 
         all_losses.extend(task_losses)
 
         task_performance[task_id] = {}
         for eval_task_id in range(1, task_id + 1):
-            eval_loader = get_dataloader(eval_task_id)
-            accuracy = evaluate_model(net, control_net, eval_loader, verbose_level)
+            test_loader = dataloaders["test"][eval_task_id - 1]
+            accuracy = evaluate_model(net, control_net, test_loader, verbose_level)
             task_performance[task_id][eval_task_id] = accuracy
             if verbose_level >= 0:
                 print(
                     f"Task {task_id} - Performance on Task {eval_task_id}: {accuracy:.2f}%"
                 )
 
-        # for foo in net.parameters():
-        #     print(foo.sum().item())
-        # for foo in control_net.parameters():
-        #     print(foo.sum().item())
+        # Save model
+        # TODO: save optimizer state, epoch, loss and create a loading function
+        save_model_with_grads(net, os.path.join(results_dir, f"net_task_{task_id}.pt"))
+        save_model_with_grads(
+            control_net, os.path.join(results_dir, f"control_net_task_{task_id}.pt")
+        )
+
+        # Save data
+        torch.save(
+            dataloaders["train"][task_id - 1].dataset,
+            os.path.join(results_dir, f"task_{task_id}_data.pt"),
+        )
+
+    if plot_fim:
+        plot_FIM(net, control_net, dataloaders)
+
+    if plot_losses:
+        plot_losses_fn(all_losses, results_dir)
 
     avg_perf = avg(task_performance)
 
