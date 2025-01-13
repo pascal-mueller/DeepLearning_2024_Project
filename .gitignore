@@ -4,3 +4,4 @@ optuna-*
 *.pyc
 *.db
 .idea
+local_data
