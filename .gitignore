@@ -6,3 +6,4 @@ optuna-*
 .idea
 local_data
 results
+data
