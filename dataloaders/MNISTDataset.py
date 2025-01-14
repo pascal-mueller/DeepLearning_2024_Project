@@ -1,8 +1,10 @@
 from collections import Counter
 
 import torch
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader
 from torchvision import datasets, transforms
+
+from utils.constants import DATA_ROOT
 
 TASKS = {
     1: [0, 2, 4, 6],
@@ -17,7 +19,7 @@ class MNISTDataset(Dataset):
         self.task_id = task_id
 
         self.mnist_data = datasets.MNIST(
-            root="../local_data",  # or any other path
+            root=DATA_ROOT,  # or any other path
             train=train,
             download=True
         )

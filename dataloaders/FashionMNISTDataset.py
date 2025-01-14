@@ -8,6 +8,7 @@ from typing import Tuple, List, Dict
 from collections import Counter
 
 from utils.colored_prints import print_info
+from utils.constants import DATA_ROOT
 
 # Define the mapping from task_id to class labels
 TASK_CLASSES: Dict[int, List[int]] = {
@@ -52,11 +53,11 @@ def get_dataloaders(
 
     # Load the full training and testing datasets
     train_dataset = torchvision.datasets.FashionMNIST(
-        root="./data", train=True, transform=transform, download=True
+        root=DATA_ROOT, train=True, transform=transform, download=True
     )
 
     test_dataset = torchvision.datasets.FashionMNIST(
-        root="./data", train=False, transform=transform, download=True
+        root=DATA_ROOT, train=False, transform=transform, download=True
     )
 
     # Function to filter dataset indices based on desired classes
