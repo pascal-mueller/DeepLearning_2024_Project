@@ -5,3 +5,4 @@ optuna-*
 *.db
 .idea
 local_data
+results

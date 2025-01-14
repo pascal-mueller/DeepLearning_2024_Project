@@ -21,6 +21,7 @@ torch.manual_seed(seed)
 np.random.seed(seed)
 random.seed(seed)
 
+
 BEST_PARAMS = {
     "num_epochs": 30,
     "inner_epochs": 54,
@@ -366,15 +367,6 @@ def objective(trial, run_name):
     _, task_performance, avg_perf = run_experiment(
         params, run_name=run_name, verbose_level=-1
     )
-
-    # Evaluation metric: Average accuracy across tasks
-    # avg_accuracy = np.mean(
-    #     [
-    #         acc
-    #         for task_results in task_performance.values()
-    #         for acc in task_results.values()
-    #     ]
-    # )
 
     # Goal is to maximize avg_accuracy
     return avg_perf

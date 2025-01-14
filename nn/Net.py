@@ -4,9 +4,10 @@ from nn.ModulationReLULayer import ModulationReLULayer
 
 
 class Net(nn.Module):
-    def __init__(self, input_size=8, hidden_size=20, output_size=2):
+    def __init__(self, input_size=8, hidden_size=20, output_size=2, softmax=False):
         super().__init__()
 
+        self.softmax = softmax
         # Question: How big can we choose the network? At some point, it might
         # just memorize instead of learn no?
         self.input_size = input_size
@@ -27,7 +28,10 @@ class Net(nn.Module):
         # Question: Why do we apply ReLu after the output layer?
         out_activated = self.output_activations(out)
 
-        return torch.softmax(out_activated, dim=-1)
+        if self.softmax:
+            return torch.softmax(out_activated, dim=-1)
+        else:
+            return out_activated
 
     def set_control_signals(self, signals):
         hidden_signals, output_signals = (
