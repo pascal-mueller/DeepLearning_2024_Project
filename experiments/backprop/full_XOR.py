@@ -7,6 +7,7 @@ import sqlite3
 
 from dataloaders.XORDataset import get_dataloaders
 from nn.Net import Net
+from utils.constants import RESULTS_ROOT
 from utils.random_conf import ensure_deterministic
 
 BEST_PARAMS = {
@@ -177,9 +178,7 @@ def run_optuna_study(
 
     assert num_cpus <= 48, "Max 48 CPUs supported for SQLite storage"
 
-    results_dir = os.path.join("results", run_name)
-
-    results_dir = os.path.join("results/bp_full_XOR", run_name)
+    results_dir = RESULTS_ROOT / "bp_full_XOR" / run_name
     os.makedirs(results_dir, exist_ok=True)
     db_path = os.path.join(results_dir, dbname)
 
