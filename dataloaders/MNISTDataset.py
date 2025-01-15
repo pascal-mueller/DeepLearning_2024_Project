@@ -7,6 +7,7 @@ from torchvision import datasets, transforms
 from utils.constants import DATA_ROOT
 
 TASKS = {
+    0: list(range(10)),
     1: [0, 2, 4, 6],
     2: [1, 3],
     3: [5, 7, 9],
