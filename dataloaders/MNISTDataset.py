@@ -54,7 +54,7 @@ def get_dataloaders(task_id, batch_size=32):
     # Typical MNIST transformations
     transform = transforms.Compose(
         [
-            transforms.Lambda(lambda x: x / 255.0),
+            transforms.ToTensor(),
             transforms.Normalize((0.1307,), (0.3081,)),
         ]
     )

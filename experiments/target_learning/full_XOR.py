@@ -117,6 +117,7 @@ def run_experiment(
     dataloaders = {"train": [], "test": []}
     for task_id in range(1, 4):
         train_loader, test_loader = get_dataloaders(task_id)
+
         dataloaders["train"].append(train_loader)
         dataloaders["test"].append(test_loader)
 

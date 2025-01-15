@@ -49,12 +49,14 @@ def get_dataloaders(
     # transform = transforms.ToTensor()
     transform = transforms.Compose(
         [
-            transforms.Normalize((0.1307,), (0.3081,))  # standard MNIST normalization
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,)),
         ]
     )
+
     # Load the full training and testing datasets
     train_dataset = torchvision.datasets.FashionMNIST(
-        root="./data", train=True, transform=transform, download=True
+        root="./data", train=True, download=True
     )
     test_dataset = torchvision.datasets.FashionMNIST(
         root="./data", train=False, transform=transform, download=True
@@ -72,6 +74,7 @@ def get_dataloaders(
 
     # Create filtered data and move to GPU
     train_data = train_dataset.data[train_indices].to(device).float()
+
     train_targets = train_dataset.targets[train_indices].to(device)
 
     test_data = test_dataset.data[test_indices].to(device).float()

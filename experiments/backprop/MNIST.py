@@ -21,7 +21,7 @@ def train_model(model, train_loader, epochs=10, lr=0.001, l1_lambda=0.0, device=
 
     for epoch in range(epochs):
         total_loss = 0.0
-        for batch_idx, (x, y, _) in enumerate(train_loader):
+        for batch_idx, (x, y) in enumerate(train_loader):
             # Forward pass
             outputs = model(x)
             loss = criterion(outputs, y)
@@ -51,7 +51,7 @@ def test_model(model, test_loader, device="cpu"):
     total = 0
 
     with torch.no_grad():
-        for x, y, _ in test_loader:
+        for x, y in test_loader:
             x, y = x.to(device), y.to(device)
 
             outputs = model(x)  # shape: [batch_size, num_classes]
@@ -92,7 +92,8 @@ def run_experiment(
     loaders = {taskid: get_dataloaders(taskid) for taskid in range(1, 5)}
 
     for taskid in range(1, 5):
-        if verbose_level > 0: print(f"=== Training on Task {taskid} ===")
+        if verbose_level > 0:
+            print(f"=== Training on Task {taskid} ===")
         train_loader, _ = loaders[taskid]
 
         train_model(
@@ -107,7 +108,10 @@ def run_experiment(
         for i in range(1, taskid + 1):
             _, test_loader = loaders[i]
             acc = test_model(model, test_loader)
-            if verbose_level > 0: print(f"After training Task {taskid}, accuracy on Task {i}: {100 * acc:.3f}%")
+            if verbose_level > 0:
+                print(
+                    f"After training Task {taskid}, accuracy on Task {i}: {100 * acc:.3f}%"
+                )
             accuracies[f"Task{i}"].append(acc)
 
     if verbose_level > 0:
@@ -115,7 +119,7 @@ def run_experiment(
         for i in range(1, 5):
             print(f"Task {i} Accuracies:", accuracies[f"Task{i}"])
 
-    avg_perf = sum(sum(accuracies[f"Task{i}"]) for i in range (1, 5)) / 4
+    avg_perf = sum(sum(accuracies[f"Task{i}"]) for i in range(1, 5)) / 4
 
     return params, accuracies, avg_perf
 

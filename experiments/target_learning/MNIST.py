@@ -16,7 +16,7 @@ from utils.fisher_information_metric import plot_FIM
 from utils.plot_losses import plot_losses as plot_losses_fn
 from utils.plot_subset import plot_subset as plot_subset_fn
 from utils.plot_data import plot_dataloaders
-
+from utils.plot_control_signals import plot_control_signals
 
 seed = 13456
 torch.manual_seed(seed)
@@ -37,11 +37,14 @@ BEST_PARAMS = {
 def evaluate_model(net, control_net, eval_loader, verbose_level=0):
     correct = 0
     total = 0
+
     with torch.no_grad():
         for eval_data, eval_labels in eval_loader:
             net.reset_control_signals()
+
             if verbose_level >= 2:
                 print("Eval", eval_data.shape, eval_labels)
+
             h1 = net.layer1(net.flatten(eval_data))
             # out = net.layer2(net.hidden_activations(h1))
             output = net(eval_data)
@@ -54,9 +57,13 @@ def evaluate_model(net, control_net, eval_loader, verbose_level=0):
 
             control_signals = control_net(current_activities)
 
-            net.set_control_signals(control_signals)
+            # Question: Why do we need to set the control signals here?
+            # Eval should be net only no?
+            # net.set_control_signals(control_signals)
+
             if verbose_level >= 2:
                 print("Control signals", net.hidden_activations.get_control_signals())
+
             outputs = net(eval_data)
 
             if verbose_level >= 2:
@@ -85,8 +92,11 @@ def train_model(
     criterion,
     l1_lambda,
     control_threshold,
+    device=torch.device("cpu"),
     verbose_level=0,
 ):
+    print(f"Training on device {device}")
+
     pbar = tqdm(
         range(num_epochs),
         desc=f"Task {task_id} Epochs",
@@ -95,10 +105,15 @@ def train_model(
     )
 
     task_losses = []
+    control_signal_history = []
 
     for epoch in pbar:
         epoch_losses = []
+        control_signal_history_batch = []
         for batch_idx, (batch_data, batch_labels) in enumerate(train_loader):
+            batch_data = batch_data.to(device)
+            batch_labels = batch_labels.to(device)
+
             # Get current network activities
             with torch.no_grad():
                 net.reset_control_signals()
@@ -139,7 +154,7 @@ def train_model(
                 #     print(f"Inner epoch {inner_epoch}")
 
                 output = net(batch_data)  # net is excluded from the graph
-                torch.set_printoptions(threshold=100000)
+
                 control_loss = criterion(output, batch_labels)
 
                 # graph = make_dot(control_loss, params=params)
@@ -175,6 +190,8 @@ def train_model(
             # Update weights based on control signals
             if total_control_loss.item() > 0.01:
                 with torch.no_grad():
+                    control_signals = control_net(current_activities)
+                    control_signal_history_batch.append(control_signals)
                     # a.shape is [batch_size, hidden_size + output_size]
                     a1 = control_signals[:, : net.hidden_size]
                     a2 = control_signals[:, net.hidden_size :]
@@ -235,7 +252,8 @@ def train_model(
                     # 5) Take the mean over the batch
                     dw = dw / x.shape[0]
 
-                    net.layer1.weight.grad = dw
+                    net.layer1.weight.grad = torch.clamp(dw, min=-1, max=1)
+                    print(net.layer1.weight.grad.mean())
 
                     #
                     # LAYER 2 WEIGHT UPDATE
@@ -268,9 +286,38 @@ def train_model(
                     r_post_adjusted = phi * a2 * a2_diff
                     dw = r_post_adjusted.T @ x
                     dw = dw / x.shape[0]
-                    net.layer2.weight.grad = dw
+                    net.layer2.weight.grad = torch.clamp(dw, min=-1, max=1)
+
+                    print(net.layer2.weight.grad.mean())
 
                     net_optimizer.step()
+
+                    print(net.layer1.weight.mean())
+                    print(net.layer2.weight.mean())
+
+                    print("-----------------")
+
+        # len(control_signal_history_batch) = num_batches
+        # control_signal_history_batch[0].shape = [batch_size, hidden_size + output_size]
+        #
+        # [batch_size, hidden_size + output_size]
+        # [batch_size, hidden_size + output_size]
+        # [batch_size, hidden_size + output_size]
+        # [batch_size, hidden_size + output_size]
+        # [batch_size, hidden_size + output_size]
+        # [batch_size, hidden_size + output_size]
+
+        # [num_samples, hidden_size + output_size]
+        signals_stacked = torch.cat(control_signal_history_batch)
+
+        hidden_signal_history = signals_stacked[:, : net.hidden_size]
+        output_signal_history = signals_stacked[:, net.hidden_size :]
+
+        # Take the mean over all samples and over all hidden neurons
+        hidden_signal_mean = torch.mean(hidden_signal_history)
+        output_signal_mean = torch.mean(output_signal_history)
+
+        control_signal_history.append([hidden_signal_mean, output_signal_mean])
 
         avg_epoch_loss = sum(epoch_losses) / len(epoch_losses) if epoch_losses else 0
         task_losses.append(avg_epoch_loss)
@@ -278,6 +325,10 @@ def train_model(
             pbar.set_postfix(avg_epoch_loss=avg_epoch_loss)
         accuracy = evaluate_model(net, control_net, test_loader, verbose_level=1)
         print(f"Epoch {epoch} Accuracy: {accuracy:.2f}%")
+
+    plot_control_signals(
+        control_signal_history, results_dir, filename=f"control_signals.png"
+    )
 
     return task_losses
 
@@ -506,7 +557,9 @@ def run_optuna_study(
 
 
 if __name__ == "__main__":
-    num_epochs = 25
+    torch.set_printoptions(threshold=100000)
+
+    num_epochs = 50
     inner_epochs = 156
     learning_rate = 0.001
     control_lr = 0.001
@@ -515,7 +568,7 @@ if __name__ == "__main__":
 
     device = torch.device("cpu")
 
-    results_dir = os.path.join("results", "tl_fmnist", "test")
+    results_dir = os.path.join("results", "tl_fmnist", "classical_full")
     os.makedirs(results_dir, exist_ok=True)
 
     # Fix seeds
@@ -526,9 +579,9 @@ if __name__ == "__main__":
     torch.use_deterministic_algorithms(True)
 
     input_size_net = 784  # Flattened image: 28 x 28
-    hidden_size_net = 1000
+    hidden_size_net = 200
     output_size_net = 10
-    hidden_size_control = 1000
+    hidden_size_control = 600
 
     # Size of all the "activities" from Net we use as input
     input_size_control = input_size_net + hidden_size_net + output_size_net
@@ -536,7 +589,7 @@ if __name__ == "__main__":
     net = Net(
         input_size=input_size_net,
         hidden_size=hidden_size_net,
-        output_size=10,
+        output_size=output_size_net,
         softmax=False,
     ).to(device)
 
@@ -554,7 +607,43 @@ if __name__ == "__main__":
     task_performance = {}
 
     task_id = 0
-    train_loader, test_loader = get_dataloaders(task_id, batch_size=512)
+
+    from torchvision import datasets, transforms
+    from torch.utils.data import DataLoader, Subset
+
+    # TODO: If we take a subset, we should compute mean and std again!
+    transform = transforms.Compose(
+        [
+            # Converts [H,W] PIL image in [0,255] -> FloatTensor [C,H,W] in [0,1]
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,)),
+        ]
+    )
+
+    trainset = datasets.MNIST(
+        root="data", train=True, transform=transform, download=True
+    )
+    testset = datasets.MNIST(
+        root="data", train=False, transform=transform, download=True
+    )
+
+    small_trainset = False
+
+    if small_trainset:
+        # Randomly select 10% of indices
+        all_indices = np.arange(len(trainset))
+        np.random.shuffle(all_indices)
+
+        num_samples = int(len(trainset) * 0.1)
+        subset_indices = all_indices[:num_samples]
+
+        # Create a Subset
+        trainset = Subset(trainset, subset_indices)
+
+    train_loader = DataLoader(trainset, batch_size=1024, shuffle=True)
+    test_loader = DataLoader(testset, batch_size=512, shuffle=False)
+
+    # train_loader, test_loader = get_dataloaders(task_id, batch_size=512)
 
     verbose_level = 0
     task_losses = train_model(
@@ -570,6 +659,7 @@ if __name__ == "__main__":
         criterion,
         l1_lambda,
         control_threshold,
+        device,
         verbose_level=verbose_level,
     )
 
