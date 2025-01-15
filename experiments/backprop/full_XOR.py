@@ -7,6 +7,7 @@ import sqlite3
 
 from dataloaders.XORDataset import get_dataloaders
 from nn.Net import Net
+from utils.random_conf import ensure_deterministic
 
 BEST_PARAMS = {
     "num_epochs": 600,
@@ -211,6 +212,7 @@ def run_optuna_study(
 
 
 if __name__ == "__main__":
+    ensure_deterministic()
     # params_75_to_80 should give between 75% and 80%
     params_75_to_80 = {
         "num_epochs": 600,

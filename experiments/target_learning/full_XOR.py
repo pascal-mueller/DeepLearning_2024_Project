@@ -6,10 +6,10 @@ import numpy as np
 import optuna
 import random
 import sqlite3
-from torchviz import make_dot
 from nn.Net import Net
 from nn.ControlNet import ControlNet
 from dataloaders.XORDataset import get_dataloaders
+from utils.random_conf import ensure_deterministic
 from utils.save_model_with_grads import save_model_with_grads
 from utils.fisher_information_metric import plot_FIM
 from utils.plot_losses import plot_losses as plot_losses_fn
@@ -415,6 +415,7 @@ def run_optuna_study(
 
 
 if __name__ == "__main__":
+    ensure_deterministic()
     print("Running full XOR experiment...")
 
     # You can run the XOR experiment with a specifi set of hyperparams:

@@ -7,6 +7,7 @@ import sqlite3
 
 from dataloaders.FashionMNISTDataset import get_dataloaders
 from nn.FashionMNIST import FashionMNIST
+from utils.random_conf import ensure_deterministic
 
 
 def train_model(
@@ -219,7 +220,13 @@ def run_optuna_study(
 
 
 if __name__ == "__main__":
-    run_experiment(BEST_PARAMS, run_name="FashionMNIST", verbose_level=0)
+    ensure_deterministic()
+    params_75_to_80 = {
+        "num_epochs": 10,
+        "learning_rate": 0.001,
+        "l1_lambda": 1e-5,
+    }
+    run_experiment(params_75_to_80, run_name="FashionMNIST", verbose_level=0)
     quit()
     # Taks 0 includes all classes.
     print(f"Running FashionMNIST experiment on full data. This is not a CL scenario.")
