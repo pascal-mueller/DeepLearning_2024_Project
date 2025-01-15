@@ -10,7 +10,7 @@ from utils.colored_prints import print_info
 # Define the mapping from task_id to class labels
 TASK_CLASSES: Dict[int, List[int]] = {
     # Task 0: Not part of the continual learning setup. This is just to test the model.
-    0: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    0: [0],
     # CL setup: Task 1, Task 2, Task 3, Task 4
     1: [0, 2, 4, 6],  # T-Shirt/Top, Pullover, Coat, Shirt
     2: [1, 3],  # Trouser, Dress
@@ -46,14 +46,18 @@ def get_dataloaders(
     classes = TASK_CLASSES[task_id]
 
     # Define the transformation
-    transform = transforms.ToTensor()
-
+    # transform = transforms.ToTensor()
+    transform = transforms.Compose(
+        [
+            transforms.Normalize((0.1307,), (0.3081,))  # standard MNIST normalization
+        ]
+    )
     # Load the full training and testing datasets
     train_dataset = torchvision.datasets.FashionMNIST(
-        root="./data", train=True, download=True
+        root="./data", train=True, transform=transform, download=True
     )
     test_dataset = torchvision.datasets.FashionMNIST(
-        root="./data", train=False, download=True
+        root="./data", train=False, transform=transform, download=True
     )
 
     # Function to filter dataset indices based on desired classes

@@ -10,7 +10,7 @@ from torchviz import make_dot
 
 from nn.Net import Net
 from nn.ControlNet import ControlNet
-from dataloaders.FashionMNISTDataset import get_dataloaders
+from dataloaders.MNISTDataset import get_dataloaders
 from utils.save_model_with_grads import save_model_with_grads
 from utils.fisher_information_metric import plot_FIM
 from utils.plot_losses import plot_losses as plot_losses_fn
@@ -18,7 +18,7 @@ from utils.plot_subset import plot_subset as plot_subset_fn
 from utils.plot_data import plot_dataloaders
 
 
-seed = 0
+seed = 13456
 torch.manual_seed(seed)
 np.random.seed(seed)
 random.seed(seed)
@@ -108,7 +108,7 @@ def train_model(
                     [net.flatten(batch_data), h1, output], dim=1
                 )
 
-            if verbose_level >= 0:
+            if verbose_level >= 1:
                 print(
                     f"Processing batch {batch_idx}/{len(train_loader)} of task {task_id}"
                 )
@@ -511,18 +511,9 @@ if __name__ == "__main__":
     learning_rate = 0.001
     control_lr = 0.001
     control_threshold = 1.103321094318002e-8
-    l1_lambda = 0.01
+    l1_lambda = 0.0
 
-    BEST_PARAMS = {
-        "num_epochs": 10,
-        "inner_epochs": 100,
-        "learning_rate": 3.900671053825562e-06,
-        "control_lr": 0.0008621989600943697,
-        "control_threshold": 1.3565492056080836e-08,
-        "l1_lambda": 0.0,
-    }
     device = torch.device("cpu")
-    task_ids = range(1, 5)
 
     results_dir = os.path.join("results", "tl_fmnist", "test")
     os.makedirs(results_dir, exist_ok=True)
@@ -535,9 +526,9 @@ if __name__ == "__main__":
     torch.use_deterministic_algorithms(True)
 
     input_size_net = 784  # Flattened image: 28 x 28
-    hidden_size_net = 100
+    hidden_size_net = 1000
     output_size_net = 10
-    hidden_size_control = 200
+    hidden_size_control = 1000
 
     # Size of all the "activities" from Net we use as input
     input_size_control = input_size_net + hidden_size_net + output_size_net
@@ -562,8 +553,9 @@ if __name__ == "__main__":
     all_losses = []
     task_performance = {}
 
-    train_loader, test_loader = get_dataloaders(0, batch_size=512)
     task_id = 0
+    train_loader, test_loader = get_dataloaders(task_id, batch_size=512)
+
     verbose_level = 0
     task_losses = train_model(
         net,
@@ -580,6 +572,7 @@ if __name__ == "__main__":
         control_threshold,
         verbose_level=verbose_level,
     )
+
     all_losses.extend(task_losses)
 
     accuracy = evaluate_model(

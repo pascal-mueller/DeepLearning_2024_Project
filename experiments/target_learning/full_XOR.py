@@ -16,7 +16,7 @@ from utils.plot_losses import plot_losses as plot_losses_fn
 from utils.plot_subset import plot_subset as plot_subset_fn
 from utils.plot_data import plot_dataloaders
 
-seed = 0
+seed = 13456
 torch.manual_seed(seed)
 np.random.seed(seed)
 random.seed(seed)

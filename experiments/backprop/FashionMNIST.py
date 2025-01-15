@@ -8,6 +8,12 @@ import sqlite3
 from dataloaders.FashionMNISTDataset import get_dataloaders
 from nn.FashionMNIST import FashionMNIST
 
+device = (
+    "mps"
+    if torch.backends.mps.is_available()
+    else ("cuda" if torch.cuda.is_available() else "cpu")
+)
+
 
 def train_model(
     model, train_loader, epochs=10, lr=0.001, l1_lambda=0.0, verbose_leve=-1
@@ -75,6 +81,7 @@ def run_experiment(
     plot_losses=False,
     plot_fim=False,
     verbose_level=-1,
+    device=torch.device("cpu"),
 ):
     if plot_data or plot_losses or plot_fim:
         raise NotImplementedError("Plots are not implemented for this experiment yet.")
@@ -86,7 +93,7 @@ def run_experiment(
     torch.manual_seed(seed)
     torch.use_deterministic_algorithms(True)
 
-    model = FashionMNIST()
+    model = FashionMNIST().to(device)
 
     accuracies = {"Task1": [], "Task2": [], "Task3": [], "Task4": []}
 
@@ -219,13 +226,23 @@ def run_optuna_study(
 
 
 if __name__ == "__main__":
-    run_experiment(BEST_PARAMS, run_name="FashionMNIST", verbose_level=0)
-    quit()
+    from nn.Net import Net
+
+    BEST_PARAMS = {
+        "num_epochs": 1,
+        "inner_epochs": 1,
+        "learning_rate": 3.900671053825562e-06,
+        "control_lr": 0.0008621989600943697,
+        "control_threshold": 1.3565492056080836e-08,
+        "l1_lambda": 0.0,
+    }
+    device = torch.device("cpu")
+
     # Taks 0 includes all classes.
     print(f"Running FashionMNIST experiment on full data. This is not a CL scenario.")
 
     train_loader, test_laoder = get_dataloaders(0)
-    model = FashionMNIST()
+    model = Net(input_size=784, hidden_size=100, output_size=10, softmax=False)
 
     train_model(model, train_loader, epochs=10, lr=0.001, l1_lambda=0.0)
     acc = test_model(model, test_laoder)

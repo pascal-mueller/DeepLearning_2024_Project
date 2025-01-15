@@ -31,7 +31,7 @@ class Net(nn.Module):
         if self.softmax:
             return torch.softmax(out_activated, dim=-1)
         else:
-            return out_activated
+            return out
 
     def set_control_signals(self, signals):
         hidden_signals, output_signals = (
