@@ -7,14 +7,16 @@ import optuna
 import random
 import sqlite3
 from torchviz import make_dot
+
 from nn.Net import Net
 from nn.ControlNet import ControlNet
-from dataloaders.XORDataset import get_dataloaders
+from dataloaders.FashionMNISTDataset import get_dataloaders
 from utils.save_model_with_grads import save_model_with_grads
 from utils.fisher_information_metric import plot_FIM
 from utils.plot_losses import plot_losses as plot_losses_fn
 from utils.plot_subset import plot_subset as plot_subset_fn
 from utils.plot_data import plot_dataloaders
+
 
 seed = 0
 torch.manual_seed(seed)
@@ -23,12 +25,12 @@ random.seed(seed)
 
 
 BEST_PARAMS = {
-    "num_epochs": 30,
-    "inner_epochs": 54,
-    "learning_rate": 3.900671053825562e-06,
-    "control_lr": 0.0008621989600943697,
-    "control_threshold": 1.3565492056080836e-08,
-    "l1_lambda": 0.0011869059296583477,
+    "num_epochs": 4,
+    "inner_epochs": 156,
+    "learning_rate": 3.3258829408007178e-06,
+    "control_lr": 2.742808475368645e-05,
+    "control_threshold": 1.103321094318002e-14,
+    "l1_lambda": 1.725811981775536,
 }
 
 
@@ -36,7 +38,7 @@ def evaluate_model(net, control_net, eval_loader, verbose_level=0):
     correct = 0
     total = 0
     with torch.no_grad():
-        for eval_data, eval_labels, _ in eval_loader:
+        for eval_data, eval_labels in eval_loader:
             net.reset_control_signals()
             if verbose_level >= 2:
                 print("Eval", eval_data.shape, eval_labels)
@@ -53,6 +55,7 @@ def evaluate_model(net, control_net, eval_loader, verbose_level=0):
                 print("Current activities", current_activities)
 
             control_signals = control_net(current_activities)
+
             net.set_control_signals(control_signals)
             if verbose_level >= 2:
                 print("Control signals", net.hidden_activations.get_control_signals())
@@ -63,7 +66,7 @@ def evaluate_model(net, control_net, eval_loader, verbose_level=0):
 
             predicted = outputs.max(1)[1]  # dim 1
             total += eval_labels.size(0)
-            correct += (predicted == eval_labels.max(1)[1]).sum().item()
+            correct += (predicted == eval_labels).sum().item()
 
             if verbose_level >= 2:
                 print(predicted)
@@ -85,6 +88,8 @@ def run_experiment(
     plot_data=False,
     plot_losses=False,
     plot_fim=False,
+    test_run=False,
+    device=torch.device("cpu"),
 ):
     (
         num_epochs,
@@ -95,7 +100,12 @@ def run_experiment(
         l1_lambda,
     ) = params.values()
 
-    results_dir = os.path.join("results", "tl_full_XOR", run_name)
+    task_ids = range(1, 5)
+
+    if test_run:
+        task_ids = [0]
+
+    results_dir = os.path.join("results", "tl_fmnist", run_name)
     os.makedirs(results_dir, exist_ok=True)
 
     # Fix seeds
@@ -105,8 +115,10 @@ def run_experiment(
     random.seed(seed)
     torch.use_deterministic_algorithms(True)
 
-    net = Net()
-    control_net = ControlNet()
+    net = Net(input_size=784, hidden_size=100, output_size=10, softmax=False).to(device)
+    control_net = ControlNet(
+        input_size=784 + 100 + 2 * 10, hidden_size=100, output_size=110
+    ).to(device)
     criterion = nn.CrossEntropyLoss()
     control_optimizer = torch.optim.Adam(control_net.parameters(), lr=float(control_lr))
     net_optimizer = torch.optim.Adam(net.parameters(), lr=float(learning_rate))
@@ -115,40 +127,48 @@ def run_experiment(
     task_performance = {}
 
     dataloaders = {"train": [], "test": []}
-    for task_id in range(1, 4):
-        train_loader, test_loader = get_dataloaders(task_id)
+    for task_id in task_ids:
+        train_loader, test_loader = get_dataloaders(
+            task_id, batch_size=512, device=device
+        )
         dataloaders["train"].append(train_loader)
         dataloaders["test"].append(test_loader)
 
         if plot_data:
-            plot_subset_fn(
-                train_loader.dataset,
-                results_dir,
-                filename=f"task_{task_id}_train_data.png",
-                title=f"Task {task_id} Train Data",
+            raise NotImplementedError(
+                "Plotting data is not implemented yet for tl fashiomnist."
             )
-            plot_subset_fn(
-                test_loader.dataset,
-                results_dir=results_dir,
-                filename=f"task_{task_id}_test_data.png",
-                title=f"Task {task_id} Test Data",
-            )
+            # plot_subset_fn(
+            #     train_loader.dataset,
+            #     results_dir,
+            #     filename=f"task_{task_id}_train_data.png",
+            #     title=f"Task {task_id} Train Data",
+            # )
+            # plot_subset_fn(
+            #     test_loader.dataset,
+            #     results_dir=results_dir,
+            #     filename=f"task_{task_id}_test_data.png",
+            #     title=f"Task {task_id} Test Data",
+            # )
 
     if plot_data:
-        plot_dataloaders(
-            dataloaders["train"],
-            results_dir,
-            filename="train_data.png",
-            title="Train Data",
+        raise NotImplementedError(
+            "Plotting data is not implemented yet for tl fashiomnist."
         )
-        plot_dataloaders(
-            dataloaders["test"],
-            results_dir,
-            filename="test_data.png",
-            title="Test Data",
-        )
+    # plot_dataloaders(
+    #     dataloaders["train"],
+    #     results_dir,
+    #     filename="train_data.png",
+    #     title="Train Data",
+    # )
+    # plot_dataloaders(
+    #     dataloaders["test"],
+    #     results_dir,
+    #     filename="test_data.png",
+    #     title="Test Data",
+    # )
 
-    for task_id in range(1, 4):
+    for task_id in task_ids:
         train_loader = dataloaders["train"][task_id - 1]
         test_loader = dataloaders["test"][task_id - 1]
 
@@ -158,22 +178,26 @@ def run_experiment(
             range(num_epochs),
             desc=f"Task {task_id} Epochs",
             leave=False,
-            disable=(verbose_level <= 0),
+            disable=(verbose_level < 0),
         )
 
         for epoch in pbar:
             epoch_losses = []
-            for batch_data, batch_labels, _ in train_loader:
+            for batch_idx, (batch_data, batch_labels) in enumerate(train_loader):
                 # Get current network activities
                 with torch.no_grad():
                     net.reset_control_signals()
                     h1 = net.layer1(net.flatten(batch_data))
-                    output = net(batch_data)
                     out = net.layer2(net.hidden_activations(h1))
+                    output = net(batch_data)
                     current_activities = torch.cat(
                         [net.flatten(batch_data), h1, out, output], dim=1
                     )
 
+                if verbose_level >= 1:
+                    print(
+                        f"Processing batch {batch_idx}/{len(train_loader)} of task {task_id}"
+                    )
                 # Inner loop - Training the control network
                 prev_loss = float("inf")
                 for inner_epoch in tqdm(
@@ -187,6 +211,7 @@ def run_experiment(
                     # Question: Why do we get the target signal for these
                     # activities? Shouldn't he take the target signal wtt to the
                     # inputs of ReLu layers?
+
                     control_signals = control_net(current_activities)
 
                     net.set_control_signals(control_signals)
@@ -196,17 +221,21 @@ def run_experiment(
                     #     **dict(control_net.named_parameters()),
                     # }
 
-                    if verbose_level >= 2:
-                        print("Control signals", control_signals.mean())
+                    # if verbose_level >= 2:
+                    #     print(f"Inner epoch {inner_epoch}")
 
                     output = net(batch_data)  # net is excluded from the graph
+                    torch.set_printoptions(threshold=100000)
                     control_loss = criterion(output, batch_labels)
+
                     # graph = make_dot(control_loss, params=params)
                     # graph.render("combined_computational_graph", format="pdf")
-                    l1_reg = (
-                        l1_lambda
-                        * (net(batch_data) - batch_labels).abs().sum(dim=1).mean()
-                    )
+
+                    output_tmp = net(batch_data)
+                    rows = torch.arange(output_tmp.size(0))
+                    output_tmp[rows, batch_labels] -= 1
+
+                    l1_reg = l1_lambda * output_tmp.abs().sum(dim=1).mean()
 
                     total_control_loss = control_loss + l1_reg
 
@@ -216,6 +245,9 @@ def run_experiment(
 
                     # Note: This only updates the weights for control_net!
                     control_optimizer.step()
+                    # print(control_signals)
+                    # print(control_net.layer1.weight.grad.sum())
+                    # input()
 
                     if abs(prev_loss - total_control_loss.item()) < control_threshold:
                         if verbose_level >= 2:
@@ -249,26 +281,49 @@ def run_experiment(
                         # phi.shape is [batch_size, hidden_size]
                         phi = net.hidden_activations(net.layer1(x))
 
-                        # Loop over post-synaptic neurons (output neurons of layer 1)
-                        for i in range(net.hidden_size):
-                            # The post synaptic neuron j has output phi_i
-                            r_post = (
-                                phi[:, i] * a1[:, i]
-                            )  # r_post.shape is [batch_size]
+                        # # Loop over post-synaptic neurons (output neurons of layer 1)
+                        # for i in range(net.hidden_size):
+                        #     # The post synaptic neuron j has output phi_i
+                        #     r_post = (
+                        #         phi[:, i] * a1[:, i]
+                        #     )  # r_post.shape is [batch_size]
 
-                            # Loop over presynaptic signals (the input signals for the i-th post-synaptic neuron)
-                            for j in range(net.input_size):
-                                # Post synaptic neuron i has presynaptic signal j
-                                r_pre_j = x[:, j]  # r_pre.shape is [batch_size]
+                        #     # Loop over presynaptic signals (the input signals for the i-th post-synaptic neuron)
+                        #     for j in range(net.input_size):
+                        #         # Post synaptic neuron i has presynaptic signal j
+                        #         r_pre_j = x[:, j]  # r_pre.shape is [batch_size]
 
-                                dw_ij = (
-                                    r_pre_j * r_post * a1_diff[:, i]
-                                )  # dw_i.shape is [batch_size]
+                        #         dw_ij = (
+                        #             r_pre_j * r_post * a1_diff[:, i]
+                        #         )  # dw_i.shape is [batch_size]
 
-                                # Note: We take the mean because we have a batch!
-                                # Note: We set the gradient of the weight because later on
-                                # we use an optimizer to update the weight.
-                                net.layer1.weight.grad[i, j] = dw_ij.mean()
+                        #         # Note: We take the mean because we have a batch!
+                        #         # Note: We set the gradient of the weight because later on
+                        #         # we use an optimizer to update the weight.
+                        #         net.layer1.weight.grad[i, j] = dw_ij.mean()
+
+                        # 1) Flatten or otherwise prepare your input batch
+                        # x = net.flatten(batch_data)  # shape: [batch_size, input_size]
+
+                        # # 2) Compute the post-activation phi (already done by net.hidden_activations)
+                        # phi = net.hidden_activations(
+                        #     net.layer1(x)
+                        # )  # shape: [batch_size, hidden_size]
+
+                        # 3) Elementwise multiply to get the “adjusted” post-synaptic signal:
+                        #    r_post_adjusted[n, i] = phi[n, i] * a1[n, i] * a1_diff[n, i]
+                        r_post_adjusted = (
+                            phi * a1 * a1_diff
+                        )  # shape: [batch_size, hidden_size]
+
+                        # 4) The outer product over the batch dimension:
+                        #    result is [hidden_size, input_size]
+                        dw = r_post_adjusted.T @ x
+
+                        # 5) Take the mean over the batch
+                        dw = dw / x.shape[0]
+
+                        net.layer1.weight.grad = dw
 
                         #
                         # LAYER 2 WEIGHT UPDATE
@@ -282,23 +337,28 @@ def run_experiment(
                         )  # phi.shape is [batch_size, output_size]
 
                         # Loop over post-synaptic neurons (output neurons of layer 2)
-                        for i in range(net.output_size):
-                            # The post synaptic neuron j has output phi_i
-                            r_post = (
-                                phi[:, i] * a2[:, i]
-                            )  # r_post.shape is [batch_size]
+                        # for i in range(net.output_size):
+                        #     # The post synaptic neuron j has output phi_i
+                        #     r_post = (
+                        #         phi[:, i] * a2[:, i]
+                        #     )  # r_post.shape is [batch_size]
 
-                            # Loop over presynaptic signals (the input signals for the i-th post-synaptic neuron)
-                            for j in range(net.hidden_size):
-                                # Post synaptic neuron i has presynaptic signal j
-                                r_pre_i = x[:, j]  # r_pre.shape is [batch_size]
+                        #     # Loop over presynaptic signals (the input signals for the i-th post-synaptic neuron)
+                        #     for j in range(net.hidden_size):
+                        #         # Post synaptic neuron i has presynaptic signal j
+                        #         r_pre_i = x[:, j]  # r_pre.shape is [batch_size]
 
-                                dw_i = (
-                                    r_pre_i * r_post * a2_diff[:, i]
-                                )  # dw_i.shape is [batch_size]
+                        #         dw_i = (
+                        #             r_pre_i * r_post * a2_diff[:, i]
+                        #         )  # dw_i.shape is [batch_size]
 
-                                # We take the mean because we have a batch!
-                                net.layer2.weight.grad[i, j] = dw_i.mean()
+                        #         # We take the mean because we have a batch!
+                        #         net.layer2.weight.grad[i, j] = dw_i.mean()
+
+                        r_post_adjusted = phi * a2 * a2_diff
+                        dw = r_post_adjusted.T @ x
+                        dw = dw / x.shape[0]
+                        net.layer2.weight.grad = dw
 
                         net_optimizer.step()
 
@@ -308,21 +368,27 @@ def run_experiment(
             task_losses.append(avg_epoch_loss)
             if epoch % 1 == 0 and verbose_level >= 1:
                 pbar.set_postfix(avg_epoch_loss=avg_epoch_loss)
+
         all_losses.extend(task_losses)
 
         task_performance[task_id] = {}
-        for eval_task_id in range(1, task_id + 1):
-            test_loader = dataloaders["test"][eval_task_id - 1]
+
+        if not test_run:
+            for eval_task_id in range(1, task_id + 1):
+                test_loader = dataloaders["test"][eval_task_id - 1]
+                accuracy = evaluate_model(net, control_net, test_loader, verbose_level)
+                task_performance[task_id][eval_task_id] = accuracy
+                if verbose_level >= 0:
+                    print(
+                        f"Task {task_id} - Performance on Task {eval_task_id}: {accuracy:.2f}%"
+                    )
+        else:
             accuracy = evaluate_model(net, control_net, test_loader, verbose_level)
-            task_performance[task_id][eval_task_id] = accuracy
-            if verbose_level >= 0:
-                print(
-                    f"Task {task_id} - Performance on Task {eval_task_id}: {accuracy:.2f}%"
-                )
+            task_performance[0][0] = accuracy
+            print(f"Accuracy on test set: {accuracy:.2f}%")
 
         # Save model
         # TODO: save optimizer state, epoch, loss and create a loading function
-
         save_model_with_grads(net, os.path.join(results_dir, f"net_task_{task_id}.pt"))
         save_model_with_grads(
             control_net, os.path.join(results_dir, f"control_net_task_{task_id}.pt")
@@ -348,12 +414,12 @@ def run_experiment(
 # Objective function for Optuna
 def objective(trial, run_name):
     # Define the hyperparameter search space
-    num_epochs = trial.suggest_int("num_epochs", 10, 200)
+    num_epochs = trial.suggest_int("num_epochs", 15, 30)
     inner_epochs = trial.suggest_int("inner_epochs", 10, 200)
-    learning_rate = trial.suggest_float("learning_rate", 1e-9, 1e-5, log=True)
-    control_lr = trial.suggest_float("control_lr", 1e-8, 1e-3, log=True)
-    control_threshold = trial.suggest_float("control_threshold", 1e-14, 1e-6, log=True)
-    l1_lambda = trial.suggest_float("l1_lambda", 1e-6, 2e-1, log=True)
+    learning_rate = trial.suggest_float("learning_rate", 1e-9, 1e-1, log=True)
+    control_lr = trial.suggest_float("control_lr", 1e-8, 1e-1, log=True)
+    control_threshold = trial.suggest_float("control_threshold", 1e-14, 1e-4, log=True)
+    l1_lambda = trial.suggest_float("l1_lambda", 1e-6, 4e-1, log=True)
 
     # Run the model with the sampled parameters
     params = {
@@ -365,7 +431,7 @@ def objective(trial, run_name):
         "l1_lambda": l1_lambda,
     }
     _, task_performance, avg_perf = run_experiment(
-        params, run_name=run_name, verbose_level=-1
+        params, run_name=run_name, verbose_level=0
     )
 
     # Goal is to maximize avg_accuracy
@@ -415,26 +481,5 @@ def run_optuna_study(
 
 
 if __name__ == "__main__":
-    print("Running full XOR experiment...")
-
-    # You can run the XOR experiment with a specifi set of hyperparams:
-    _, perf, avg_perf = run_experiment(
-        BEST_PARAMS, verbose_level=1, plot_data=False, run_name="full_XOR_test"
-    )
-    print("Avg Perf.: ", avg_perf)
-
-    # # Remove
-    quit()
-
-    # Or you can start a hyperparameter optimization study with Optuna:
-    # Configure the number of trials and CPUs
-    num_trials = 1000
-    # Adjust as needed, max is 48 (change storage string abvoe to increase max)
-    num_cpus = 8
-
-    # Run the study
-    study = run_optuna_study(num_trials, num_cpus)
-
-    # Show the best results
-    print("Finished optimization. Best parameters:")
-    print(study.best_params)
+    print(f"Device: {device}")
+    run_experiment(BEST_PARAMS, "test_0", verbose_level=0, test_run=False)

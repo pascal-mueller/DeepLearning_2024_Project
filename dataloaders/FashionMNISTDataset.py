@@ -1,7 +1,5 @@
-# continual_learning_dataloader.py
-
 import torch
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, TensorDataset
 import torchvision
 from torchvision import transforms
 from typing import Tuple, List, Dict
@@ -22,7 +20,7 @@ TASK_CLASSES: Dict[int, List[int]] = {
 
 
 def get_dataloaders(
-    task_id: int, batch_size: int = 64
+    task_id: int, batch_size: int = 64, device: torch.device = torch.device("cpu")
 ) -> Tuple[DataLoader, DataLoader]:
     """
     Returns the training and testing DataLoaders for a given task.
@@ -47,78 +45,67 @@ def get_dataloaders(
 
     classes = TASK_CLASSES[task_id]
 
-    # Define the transformation (you can add more transforms if needed)
+    # Define the transformation
     transform = transforms.ToTensor()
 
     # Load the full training and testing datasets
     train_dataset = torchvision.datasets.FashionMNIST(
-        root="./data", train=True, transform=transform, download=True
+        root="./data", train=True, download=True
     )
-
     test_dataset = torchvision.datasets.FashionMNIST(
-        root="./data", train=False, transform=transform, download=True
+        root="./data", train=False, download=True
     )
 
     # Function to filter dataset indices based on desired classes
     def filter_indices(
         dataset: torchvision.datasets.FashionMNIST, classes: List[int]
     ) -> List[int]:
-        """
-        Filters the dataset and returns indices of samples belonging to the specified classes.
-
-        Args:
-            dataset (torchvision.datasets.FashionMNIST): The dataset to filter.
-            classes (List[int]): The list of class labels to include.
-
-        Returns:
-            List[int]: A list of indices for samples belonging to the specified classes.
-        """
         return [idx for idx, label in enumerate(dataset.targets) if label in classes]
 
-    # Get the filtered indices for training and testing datasets
+    # Filter indices for the current task
     train_indices = filter_indices(train_dataset, classes)
     test_indices = filter_indices(test_dataset, classes)
 
-    # Create Subsets for the current task
-    train_subset = Subset(train_dataset, train_indices)
-    test_subset = Subset(test_dataset, test_indices)
+    # Create filtered data and move to GPU
+    train_data = train_dataset.data[train_indices].to(device).float()
+    train_targets = train_dataset.targets[train_indices].to(device)
+
+    test_data = test_dataset.data[test_indices].to(device).float()
+    test_targets = test_dataset.targets[test_indices].to(device)
+
+    # Create TensorDatasets using GPU-backed data
+    train_subset = TensorDataset(train_data, train_targets)
+    test_subset = TensorDataset(test_data, test_targets)
 
     # Create DataLoaders
     train_loader = DataLoader(
         train_subset,
         batch_size=batch_size,
         shuffle=True,  # Shuffle for training
-        num_workers=2,  # Number of subprocesses for data loading
-        pin_memory=True if torch.cuda.is_available() else False,
+        num_workers=0,  # No extra processes needed since data is on GPU
     )
 
     test_loader = DataLoader(
         test_subset,
         batch_size=batch_size,
         shuffle=False,  # No need to shuffle for testing
-        num_workers=2,
-        pin_memory=True if torch.cuda.is_available() else False,
+        num_workers=0,
     )
 
     return train_loader, test_loader
 
 
-def count_classes(dataset_subset: Subset) -> Dict[int, int]:
+def count_classes(dataset: TensorDataset) -> Dict[int, int]:
     """
-    Counts the number of samples per class in a given dataset subset.
+    Counts the number of samples per class in a given dataset.
 
     Args:
-        dataset_subset (Subset): The dataset subset to analyze.
+        dataset (TensorDataset): The dataset to analyze.
 
     Returns:
         Dict[int, int]: A dictionary mapping class labels to their respective counts.
     """
-    # Access the original dataset's targets and the subset's indices
-    targets = dataset_subset.dataset.targets[dataset_subset.indices]
-    # If targets are tensors, convert to list
-    if isinstance(targets, torch.Tensor):
-        targets = targets.tolist()
-    # Count the occurrences of each class
+    targets = dataset.tensors[1].tolist()  # Extract labels
     class_counts = Counter(targets)
     return dict(class_counts)
 
@@ -156,8 +143,8 @@ if __name__ == "__main__":
     for task_id in task_ids:
         print(f"\n--- Task {task_id} ---")
         train_loader, test_loader = get_dataloaders(task_id, batch_size)
-        breakpoint()
-        # Access the subsets directly to count classes without iterating through DataLoader
+
+        # Access the TensorDatasets directly to count classes
         train_subset = train_loader.dataset
         test_subset = test_loader.dataset
 

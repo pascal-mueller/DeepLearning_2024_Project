@@ -55,5 +55,10 @@ class Net(nn.Module):
         ]
 
     def reset_control_signals(self):
-        self.hidden_activations.set_control_signals(torch.ones(self.hidden_size))
-        self.output_activations.set_control_signals(torch.ones(self.output_size))
+        device = self.layer1.weight.device
+        self.hidden_activations.set_control_signals(
+            torch.ones(self.hidden_size).to(device)
+        )
+        self.output_activations.set_control_signals(
+            torch.ones(self.output_size).to(device)
+        )
