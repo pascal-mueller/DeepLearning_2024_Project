@@ -9,6 +9,7 @@ import sqlite3
 from nn.Net import Net
 from nn.ControlNet import ControlNet
 from dataloaders.XORDataset import get_dataloaders
+from utils.constants import RESULTS_ROOT
 from utils.random_conf import ensure_deterministic
 from utils.save_model_with_grads import save_model_with_grads
 from utils.fisher_information_metric import plot_FIM
@@ -95,7 +96,7 @@ def run_experiment(
         l1_lambda,
     ) = params.values()
 
-    results_dir = os.path.join("results", "tl_full_XOR", run_name)
+    results_dir = RESULTS_ROOT / "tl_full_XOR" / run_name
     os.makedirs(results_dir, exist_ok=True)
 
     # Fix seeds
