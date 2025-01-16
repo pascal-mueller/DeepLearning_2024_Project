@@ -1,13 +1,13 @@
 from collections import Counter
 
 import torch
+from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 from torchvision import datasets, transforms
 
 from utils.constants import DATA_ROOT
 
 TASKS = {
-    0: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
     0: list(range(10)),
     1: [0, 2, 4, 6],
     2: [1, 3],
@@ -18,6 +18,15 @@ TASKS = {
 
 class MNISTDataset(Dataset):
     def __init__(self, task_id, train=True, transform=None):
+        if transform is None:
+            transform = transforms.Compose(
+                [
+                    # Converts [H,W] PIL image in [0,255] -> FloatTensor [C,H,W] in [0,1]
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.1307,), (0.3081,)),
+                ]
+            )
+
         self.transform = transform
         self.task_id = task_id
 
@@ -41,19 +50,16 @@ class MNISTDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, index):
-        x = self.data[index].float()
+        x_array = self.data[index].numpy()
+        x_pil = Image.fromarray(x_array, mode="L")
+        x = self.transform(x_pil) if self.transform else x_pil
+
         y = int(self.labels[index])
-
-        x = x.unsqueeze(0)
-
-        # If transform is defined (like normalization, etc.), apply it
-        if self.transform:
-            x = self.transform(x)
 
         return x, y
 
 
-def get_dataloaders(task_id, batch_size=32):
+def get_dataloaders(task_id=0, batch_size=32):
     # Typical MNIST transformations
     transform = transforms.Compose(
         [

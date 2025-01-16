@@ -1,12 +1,13 @@
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 from nn.Net import Net
 from nn.ControlNet import ControlNet
 from utils.colored_prints import *
 from torchvision import datasets, transforms
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader
+
+from utils.constants import DATA_ROOT
 
 # TODO: If we take a subset, we should compute mean and std again!
 transform = transforms.Compose(
@@ -17,12 +18,9 @@ transform = transforms.Compose(
     ]
 )
 
-trainset = datasets.MNIST(root="data", train=True, transform=transform, download=True)
-testset = datasets.MNIST(root="data", train=False, transform=transform, download=True)
+trainset = datasets.MNIST(root=DATA_ROOT, train=True, transform=transform, download=True)
+testset = datasets.MNIST(root=DATA_ROOT, train=False, transform=transform, download=True)
 
-
-# plt.scatter(data[:, 0], data[:, 1])
-# plt.show()
 
 
 num_epochs = 50
