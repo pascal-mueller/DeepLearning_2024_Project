@@ -7,6 +7,7 @@ import sqlite3
 
 from dataloaders.FashionMNISTDataset import get_dataloaders
 from nn.FashionMNIST import FashionMNIST
+from utils.random_conf import ensure_deterministic
 
 device = (
     "mps"
@@ -228,15 +229,16 @@ def run_optuna_study(
 if __name__ == "__main__":
     from nn.Net import Net
 
-    BEST_PARAMS = {
-        "num_epochs": 1,
-        "inner_epochs": 1,
-        "learning_rate": 3.900671053825562e-06,
-        "control_lr": 0.0008621989600943697,
-        "control_threshold": 1.3565492056080836e-08,
-        "l1_lambda": 0.0,
-    }
     device = torch.device("cpu")
+
+    ensure_deterministic()
+    params_75_to_80 = {
+        "num_epochs": 10,
+        "learning_rate": 0.001,
+        "l1_lambda": 1e-5,
+    }
+    run_experiment(params_75_to_80, run_name="FashionMNIST", verbose_level=0)
+    quit()
 
     # Taks 0 includes all classes.
     print(f"Running FashionMNIST experiment on full data. This is not a CL scenario.")

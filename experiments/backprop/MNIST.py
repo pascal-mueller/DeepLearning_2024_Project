@@ -4,12 +4,7 @@ import torch.optim as optim
 
 from dataloaders.MNISTDataset import get_dataloaders
 from nn.MNISTModel import MNISTModel
-
-# BEST_PARAMS = {
-#     "num_epochs": 600,
-#     "learning_rate": 0.1,
-#     "l1_lambda": 1e-5,
-# }
+from utils.random_conf import ensure_deterministic
 
 
 def train_model(model, train_loader, epochs=10, lr=0.001, l1_lambda=0.0, device="cpu"):
@@ -68,7 +63,7 @@ def test_model(model, test_loader, device="cpu"):
 
 def run_experiment(
     params,
-    run_name,
+    run_name=None,
     seed=0,
     plot_data=False,
     plot_losses=False,
@@ -119,12 +114,13 @@ def run_experiment(
         for i in range(1, 5):
             print(f"Task {i} Accuracies:", accuracies[f"Task{i}"])
 
-    avg_perf = sum(sum(accuracies[f"Task{i}"]) for i in range(1, 5)) / 4
+    avg_perf = sum(sum(accuracies[f"Task{i}"]) for i in range (1, 5)) / sum(map(sum, accuracies.values()))
 
     return params, accuracies, avg_perf
 
 
 if __name__ == "__main__":
+    ensure_deterministic()
     # params_75_to_80 should give between 75% and 80%
     params_75_to_80 = {
         "num_epochs": 10,
@@ -133,7 +129,7 @@ if __name__ == "__main__":
     }
 
     # avgs = [run_experiment(params_75_to_80, run_name=f"Run {i+1}")[2] for i in range(10)]
-    _, _, avg = run_experiment(params_75_to_80, run_name="test_run", verbose_level=1)
+    _, _, avg = run_experiment(params_75_to_80, verbose_level=1)
     print(avg)
     # print(avgs, avg)
     # print(sum(avgs)/len(avgs))
