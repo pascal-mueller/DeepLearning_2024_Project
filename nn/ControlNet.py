@@ -19,7 +19,10 @@ class ControlNet(nn.Module):
         x = self.layer1(x)
         x = self.relu1(x)
         x = self.layer2(x)
+
+        # Basically shifts relu to left by 1
         x = self.relu2(x + 1)
+        # Reason for clamp: Prohibits the control net to solve the task by itself.
         x = torch.clamp(x, min=1.0 / self.a, max=self.a)
 
         return x

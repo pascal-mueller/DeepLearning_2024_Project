@@ -7,12 +7,14 @@ from torchvision import datasets, transforms
 from utils.constants import DATA_ROOT
 
 TASKS = {
+    0: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
     0: list(range(10)),
     1: [0, 2, 4, 6],
     2: [1, 3],
     3: [5, 7, 9],
-    4: [8]
+    4: [8],
 }
+
 
 class MNISTDataset(Dataset):
     def __init__(self, task_id, train=True, transform=None):
@@ -20,9 +22,9 @@ class MNISTDataset(Dataset):
         self.task_id = task_id
 
         self.mnist_data = datasets.MNIST(
-            root=DATA_ROOT,  # or any other path
+            root=DATA_ROOT,
             train=train,
-            download=True
+            download=True,
         )
 
         data, targets = self.mnist_data.data, self.mnist_data.targets
@@ -30,7 +32,7 @@ class MNISTDataset(Dataset):
         digits = TASKS[task_id]
         mask = torch.zeros_like(targets, dtype=torch.bool)
         for digit in digits:
-            mask |= (targets == digit)
+            mask |= targets == digit
 
         self.data = data[mask]
         self.labels = targets[mask]
@@ -48,14 +50,17 @@ class MNISTDataset(Dataset):
         if self.transform:
             x = self.transform(x)
 
-        return x, y, self.task_id
+        return x, y
 
 
 def get_dataloaders(task_id, batch_size=32):
     # Typical MNIST transformations
-    transform = transforms.Compose([
-        transforms.Normalize((0.1307,), (0.3081,))  # standard MNIST normalization
-    ])
+    transform = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,)),
+        ]
+    )
 
     train_dataset = MNISTDataset(task_id, train=True, transform=transform)
     test_dataset = MNISTDataset(task_id, train=False, transform=transform)
@@ -77,7 +82,7 @@ if __name__ == "__main__":
         def count_classes(dataloader):
             class_counts = Counter()
             total_samples = 0
-            for _, batch_labels, _ in dataloader:
+            for _, batch_labels in dataloader:
                 labels = batch_labels.numpy()
                 class_counts.update(labels)
                 total_samples += len(labels)
@@ -91,7 +96,15 @@ if __name__ == "__main__":
 
         # Calculate percentages
         for key in train_class_counts.keys():
-            train_rel = train_class_counts[key] / train_total * 100 if train_total > 0 else 0
-            print(f"Train class {key}: {train_class_counts[key]} samples ({train_rel:.2f}%)")
-            test_rel = test_class_counts[key] / test_total * 100 if test_total > 0 else 0
-            print(f"Test class {key}: {test_class_counts[key]} samples ({test_rel:.2f}%)\n")
+            train_rel = (
+                train_class_counts[key] / train_total * 100 if train_total > 0 else 0
+            )
+            print(
+                f"Train class {key}: {train_class_counts[key]} samples ({train_rel:.2f}%)"
+            )
+            test_rel = (
+                test_class_counts[key] / test_total * 100 if test_total > 0 else 0
+            )
+            print(
+                f"Test class {key}: {test_class_counts[key]} samples ({test_rel:.2f}%)\n"
+            )

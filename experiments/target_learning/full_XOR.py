@@ -17,7 +17,7 @@ from utils.plot_losses import plot_losses as plot_losses_fn
 from utils.plot_subset import plot_subset as plot_subset_fn
 from utils.plot_data import plot_dataloaders
 
-seed = 0
+seed = 13456
 torch.manual_seed(seed)
 np.random.seed(seed)
 random.seed(seed)
@@ -118,6 +118,7 @@ def run_experiment(
     dataloaders = {"train": [], "test": []}
     for task_id in range(1, 4):
         train_loader, test_loader = get_dataloaders(task_id)
+
         dataloaders["train"].append(train_loader)
         dataloaders["test"].append(test_loader)
 
@@ -309,7 +310,6 @@ def run_experiment(
             task_losses.append(avg_epoch_loss)
             if epoch % 1 == 0 and verbose_level >= 1:
                 pbar.set_postfix(avg_epoch_loss=avg_epoch_loss)
-
         all_losses.extend(task_losses)
 
         task_performance[task_id] = {}
@@ -324,6 +324,7 @@ def run_experiment(
 
         # Save model
         # TODO: save optimizer state, epoch, loss and create a loading function
+
         save_model_with_grads(net, os.path.join(results_dir, f"net_task_{task_id}.pt"))
         save_model_with_grads(
             control_net, os.path.join(results_dir, f"control_net_task_{task_id}.pt")
@@ -420,8 +421,9 @@ if __name__ == "__main__":
     print("Running full XOR experiment...")
 
     # You can run the XOR experiment with a specifi set of hyperparams:
-    _, perf = run_experiment(BEST_PARAMS, verbose_level=1, plot_data=False)
-    avg_perf = avg(perf)
+    _, perf, avg_perf = run_experiment(
+        BEST_PARAMS, verbose_level=1, plot_data=False, run_name="full_XOR_test"
+    )
     print("Avg Perf.: ", avg_perf)
 
     # # Remove

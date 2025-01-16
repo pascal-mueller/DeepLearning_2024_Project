@@ -31,7 +31,7 @@ class Net(nn.Module):
         if self.softmax:
             return torch.softmax(out_activated, dim=-1)
         else:
-            return out_activated
+            return out
 
     def set_control_signals(self, signals):
         hidden_signals, output_signals = (
@@ -55,5 +55,10 @@ class Net(nn.Module):
         ]
 
     def reset_control_signals(self):
-        self.hidden_activations.set_control_signals(torch.ones(self.hidden_size))
-        self.output_activations.set_control_signals(torch.ones(self.output_size))
+        device = self.layer1.weight.device
+        self.hidden_activations.set_control_signals(
+            torch.ones(self.hidden_size).to(device)
+        )
+        self.output_activations.set_control_signals(
+            torch.ones(self.output_size).to(device)
+        )
