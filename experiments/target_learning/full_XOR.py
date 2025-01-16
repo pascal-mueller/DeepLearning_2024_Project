@@ -2,9 +2,7 @@ import os
 from tqdm import tqdm
 import torch
 import torch.nn as nn
-import numpy as np
 import optuna
-import random
 import sqlite3
 from nn.Net import Net
 from nn.ControlNet import ControlNet
@@ -16,12 +14,6 @@ from utils.fisher_information_metric import plot_FIM
 from utils.plot_losses import plot_losses as plot_losses_fn
 from utils.plot_subset import plot_subset as plot_subset_fn
 from utils.plot_data import plot_dataloaders
-
-seed = 13456
-torch.manual_seed(seed)
-np.random.seed(seed)
-random.seed(seed)
-
 
 BEST_PARAMS = {
     "num_epochs": 30,
@@ -98,13 +90,6 @@ def run_experiment(
 
     results_dir = RESULTS_ROOT / "tl_full_XOR" / run_name
     os.makedirs(results_dir, exist_ok=True)
-
-    # Fix seeds
-    # TODO: Make sure we fixed all possible randomness
-    torch.manual_seed(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-    torch.use_deterministic_algorithms(True)
 
     net = Net()
     control_net = ControlNet()

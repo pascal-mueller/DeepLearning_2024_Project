@@ -91,9 +91,6 @@ def run_experiment(
     learning_rate = params.get("learning_rate", 0.001)
     l1_lambda = params.get("l1_lambda", 0.0)
 
-    torch.manual_seed(seed)
-    torch.use_deterministic_algorithms(True)
-
     model = FashionMNIST().to(device)
 
     accuracies = {"Task1": [], "Task2": [], "Task3": [], "Task4": []}
