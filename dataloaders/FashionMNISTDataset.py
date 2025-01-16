@@ -57,7 +57,6 @@ def get_dataloaders(
 
     # Load the full training and testing datasets
     train_dataset = torchvision.datasets.FashionMNIST(
-        root="./data", train=True, download=True
         root=DATA_ROOT, train=True, transform=transform, download=True
     )
     test_dataset = torchvision.datasets.FashionMNIST(
