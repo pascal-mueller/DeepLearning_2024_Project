@@ -11,7 +11,13 @@ class ModulationReLULayer(nn.Module):
         self.control_signals = torch.ones(size)
 
     def forward(self, x):
-        return self.control_signals * torch.relu(x)
+        foo = torch.relu(x)
+
+        try:
+            return self.control_signals * foo
+        except:
+            print(self.control_signals.shape, " * ", foo.shape)
+            breakpoint()
 
     def set_control_signals(self, signals):
         self.control_signals = torch.clamp(signals, min=1.0 / self.a, max=self.a)
