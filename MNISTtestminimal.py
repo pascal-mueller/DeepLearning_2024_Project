@@ -27,9 +27,13 @@ def evaluate_model(net, control_net, test_loader, useSignals=False):
     with torch.no_grad():
         for batch_data, batch_labels in test_loader:
             net.reset_control_signals()
-            h1 = net.layer1(net.flatten(batch_data))
-            output = net(batch_data)
-            current_activities = torch.cat([net.flatten(batch_data), h1, output], dim=1)
+
+            inp = net.flatten(batch_data)
+            h1 = net.layer1(inp)
+            h2 = net.layer2(net.h1_mrelu(h1))
+            h3 = net.layer3(net.h2_mrelu(h2))
+            output = net.layer4(net.h3_mrelu(h3))
+            current_activities = torch.cat([inp, h1, h2, h3, output], dim=1)
 
             control_signals = control_net(current_activities)
             if useSignals:
@@ -60,7 +64,7 @@ def train_model(
 ):
     task_classes = torch.tensor(TASK_CLASSES[task_id])
 
-    pbar = tqdm(range(num_epochs), desc=f"Epochs", leave=False, disable=True)
+    pbar = tqdm(range(num_epochs), desc=f"Epochs", leave=False, disable=False)
 
     for epoch in pbar:
         # print(f"Press any key to start epoch {epoch}")
@@ -78,16 +82,18 @@ def train_model(
             # Get current network activities
             with torch.no_grad():
                 net.reset_control_signals()
-                h1 = net.layer1(net.flatten(batch_data_god))
-                output = net(batch_data_god)
-                current_activities = torch.cat(
-                    [net.flatten(batch_data_god), h1, output], dim=1
-                )
+
+                inp = net.flatten(batch_data_god)
+                h1 = net.layer1(inp)
+                h2 = net.layer2(net.h1_mrelu(h1))
+                h3 = net.layer3(net.h2_mrelu(h2))
+                output = net.layer4(net.h3_mrelu(h3))
+                current_activities = torch.cat([inp, h1, h2, h3, output], dim=1)
 
             old_loss = float("inf")
             for inner_epoch in range(inner_epochs):
                 control_optimizer.zero_grad()
-                # net_optimizer.zero_grad()  # TODO: Do I need this?
+                net_optimizer.zero_grad()  # TODO: Do I need this?
 
                 control_signals = control_net(current_activities)
                 net.set_control_signals(control_signals)
@@ -96,56 +102,78 @@ def train_model(
 
                 control_loss = criterion(output, batch_labels_god)
 
-                l1_reg = l1_reg = l1_lambda * sum(
-                    p.abs().sum() for p in net.parameters()
+                l1_reg = l1_lambda * sum(
+                    p.abs().sum() for p in control_net.parameters()
                 )
+                # l2_lambda = 1e-2
 
+                # l2_reg = l2_lambda * sum((p**2).sum() for p in control_net.parameters())
+                # l1_reg = l1_lambda * sum(
+                #     (output - 1).abs().sum() for output in net(batch_data_god)
+                # )
                 total_control_loss = control_loss + l1_reg
 
                 total_control_loss.backward()
                 control_optimizer.step()
 
                 if abs(old_loss - total_control_loss.item()) < control_threshold:
+                    # print(f"Converged after {inner_epoch} epochs")
+                    # if inner_epoch == 1:
+                    #     breakpoint()
                     break
 
                 old_loss = total_control_loss.item()
 
+            print(total_control_loss.item())
+
             if control_loss.item() > 0.01:
-                batch_losses.append(control_loss.item())
+                batch_losses.append(total_control_loss.item())
                 with torch.no_grad():
-                    net.reset_control_signals()
-                    h1 = net.layer1(net.flatten(batch_data_god))
-                    output = net(batch_data_god)
-                    current_activities = torch.cat(
-                        [net.flatten(batch_data_god), h1, output], dim=1
-                    )
+                    # net.set_control_signals(control_signals)
                     control_signals = control_net(current_activities)
                     # a.shape is [batch_size, hidden_size + output_size]
                     # control_signals = control_signals[no_god_mask]
                     a1 = control_signals[:, : net.hidden_size]
-                    a2 = control_signals[:, net.hidden_size :]
+                    a2 = control_signals[:, net.hidden_size : 2 * net.hidden_size]
+                    a3 = control_signals[:, 2 * net.hidden_size :]
 
                     # Sander said, we can use 1.0 as the baseline
                     baseline_a1 = torch.ones_like(a1)
                     baseline_a2 = torch.ones_like(a2)
+                    baseline_a3 = torch.ones_like(a3)
                     a1_diff = a1 - baseline_a1
                     a2_diff = a2 - baseline_a2
+                    a3_diff = a3 - baseline_a3
 
                     # Layer 1 weight update
                     x = net.flatten(batch_data_god)
-                    phi = net.hidden_activations(net.layer1(x))
+                    phi = net.h1_mrelu(net.layer1(x))
                     r_post_adjusted = phi * a1 * a1_diff
                     dw = r_post_adjusted.T @ x
                     dw = dw / x.shape[0]
-                    net.layer1.weight.grad = torch.clamp(dw, min=-5, max=5)
+                    net.layer1.weight.grad = dw
 
                     # Layer 2 weight update
-                    x2 = net.hidden_activations(net.layer1(net.flatten(batch_data_god)))
-                    phi2 = net.output_activations(net.layer2(x2))
+                    x2 = net.h1_mrelu(net.layer1(net.flatten(batch_data_god)))
+                    phi2 = net.h2_mrelu(net.layer2(x2))
+
                     r_post_adjusted2 = phi2 * a2 * a2_diff
                     dw2 = r_post_adjusted2.T @ x2
                     dw2 = dw2 / x2.shape[0]
-                    net.layer2.weight.grad = torch.clamp(dw2, min=-5, max=5)
+                    net.layer2.weight.grad = dw2
+
+                    # Layer 3 weight update
+                    x3 = net.h2_mrelu(
+                        net.layer2(
+                            net.h1_mrelu(net.layer1(net.flatten(batch_data_god)))
+                        )
+                    )
+                    phi3 = net.h3_mrelu(net.layer3(x3))
+
+                    r_post_adjusted3 = phi3 * a3 * a3_diff
+                    dw3 = r_post_adjusted3.T @ x3
+                    dw3 = dw3 / x3.shape[0]
+                    net.layer3.weight.grad = dw3
 
                     net_optimizer.step()
 
@@ -166,11 +194,13 @@ def run_experiment(params):
 
     # Size of all the "activities" from Net we use as input
     input_size_net = 784  # Flattened image: 28 x 28
-    hidden_size_net = 100
+    hidden_size_net = 200
     output_size_net = 10
-    hidden_size_control = 150
 
-    input_size_control = input_size_net + hidden_size_net + output_size_net
+    hidden_size_control = 400
+    output_size_control = 3 * hidden_size_net
+
+    input_size_control = input_size_net + 3 * hidden_size_net + output_size_net
 
     net = Net(
         input_size=input_size_net,
@@ -182,7 +212,7 @@ def run_experiment(params):
     control_net = ControlNet(
         input_size=input_size_control,
         hidden_size=hidden_size_control,
-        output_size=hidden_size_net + output_size_net,
+        output_size=output_size_control,
     )
 
     criterion = nn.CrossEntropyLoss()
@@ -191,7 +221,7 @@ def run_experiment(params):
 
     train_dataloaders = []
     test_dataloaders = []
-    task_ids = list(range(1, 2))
+    task_ids = list(range(0, 1))
     for task_id in task_ids:
         train_loader_god, test_loader_god = get_dataloaders(
             task_id=task_id,
@@ -308,4 +338,14 @@ def run_optuna_study(
     return study
 
 
-run_optuna_study("test_minimalexample", 100, 8)
+params = {
+    "num_epochs": 3,
+    "inner_epochs": 188,
+    "learning_rate": 0.0001,
+    "control_lr": 0.0001,
+    "control_threshold": 0.00032949549118669864,
+    "l1_lambda": 0.0,
+}
+acc = run_experiment(params)
+print(acc)
+# run_optuna_study("test_minimalexample", 100, 8)
