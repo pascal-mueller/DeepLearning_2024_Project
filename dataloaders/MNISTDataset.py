@@ -67,6 +67,7 @@ TASK_CLASSES: Dict[int, List[int]] = {
 
 
 def get_dataloaders(task_ids, train_batch_size=32, test_batch_size=32, device="cpu"):
+    if type(task_ids) is not list: task_ids = [task_ids] # so single tasks can be passed as well
     classes = list(set(sum([TASK_CLASSES[task_id] for task_id in task_ids],[])))
 
     # Typical MNIST transformations
@@ -170,8 +171,7 @@ if __name__ == "__main__":
 
     for task_id in task_ids:
         print(f"\n--- Task {task_id} ---")
-        classes = TASK_CLASSES[task_id]
-        train_loader, test_loader = get_dataloaders(classes, batch_size)
+        train_loader, test_loader = get_dataloaders(task_id, batch_size)
 
         # Access the TensorDatasets directly to count classes
         train_subset = train_loader.dataset
