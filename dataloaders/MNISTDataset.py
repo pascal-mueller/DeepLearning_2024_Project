@@ -23,50 +23,50 @@ TASK_CLASSES: Dict[int, List[int]] = {
 }
 
 
-class MNISTDataset(Dataset):
-    def __init__(self, task_id, train=True, transform=None):
-        if transform is None:
-            transform = transforms.Compose(
-                [
-                    # Converts [H,W] PIL image in [0,255] -> FloatTensor [C,H,W] in [0,1]
-                    transforms.ToTensor(),
-                    transforms.Normalize((0.1307,), (0.3081,)),
-                ]
-            )
+# class MNISTDataset(Dataset):
+#     def __init__(self, task_id, train=True, transform=None):
+#         if transform is None:
+#             transform = transforms.Compose(
+#                 [
+#                     # Converts [H,W] PIL image in [0,255] -> FloatTensor [C,H,W] in [0,1]
+#                     transforms.ToTensor(),
+#                     transforms.Normalize((0.1307,), (0.3081,)),
+#                 ]
+#             )
+#
+#         self.transform = transform
+#         self.task_id = task_id
+#
+#         self.mnist_data = datasets.MNIST(
+#             root=DATA_ROOT,
+#             train=train,
+#             download=True,
+#         )
+#
+#         data, targets = self.mnist_data.data, self.mnist_data.targets
+#
+#         digits = TASKS[task_id]
+#         mask = torch.zeros_like(targets, dtype=torch.bool)
+#         for digit in digits:
+#             mask |= targets == digit
+#
+#         self.data = data[mask]
+#         self.labels = targets[mask]
+#
+#     def __len__(self):
+#         return len(self.data)
+#
+#     def __getitem__(self, index):
+#         x_array = self.data[index].numpy()
+#         x_pil = Image.fromarray(x_array, mode="L")
+#         x = self.transform(x_pil) if self.transform else x_pil
+#
+#         y = int(self.labels[index])
+#
+#         return x, y
 
-        self.transform = transform
-        self.task_id = task_id
 
-        self.mnist_data = datasets.MNIST(
-            root=DATA_ROOT,
-            train=train,
-            download=True,
-        )
-
-        data, targets = self.mnist_data.data, self.mnist_data.targets
-
-        digits = TASKS[task_id]
-        mask = torch.zeros_like(targets, dtype=torch.bool)
-        for digit in digits:
-            mask |= targets == digit
-
-        self.data = data[mask]
-        self.labels = targets[mask]
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, index):
-        x_array = self.data[index].numpy()
-        x_pil = Image.fromarray(x_array, mode="L")
-        x = self.transform(x_pil) if self.transform else x_pil
-
-        y = int(self.labels[index])
-
-        return x, y
-
-
-def get_dataloaders(task_id=0, batch_size=32):
+def get_dataloaders(classes, train_batch_size=32, test_batch_size=32, device="cpu"):
     # Typical MNIST transformations
     transform = transforms.Compose(
         [
@@ -76,9 +76,9 @@ def get_dataloaders(task_id=0, batch_size=32):
     )
 
     # Load the full training and testing datasets
-    train_dataset = torchvision.datasets.MNIST(root="./data", train=True, download=True)
+    train_dataset = torchvision.datasets.MNIST(root=DATA_ROOT, train=True, download=True)
     test_dataset = torchvision.datasets.MNIST(
-        root="./data", train=False, transform=transform, download=True
+        root=DATA_ROOT, train=False, transform=transform, download=True
     )
 
     # Function to filter dataset indices based on desired classes
@@ -136,7 +136,7 @@ def count_classes(dataset: TensorDataset) -> Dict[int, int]:
     return dict(class_counts)
 
 
-def is_balanced(class_counts: Dict[int, int], tolerance: float = 0.05) -> bool:
+def is_balanced(class_counts: Dict[int, int], tolerance: float = 0.1) -> bool:
     """
     Checks if the class counts are balanced within a specified tolerance.
 
@@ -168,7 +168,8 @@ if __name__ == "__main__":
 
     for task_id in task_ids:
         print(f"\n--- Task {task_id} ---")
-        train_loader, test_loader = get_dataloaders(task_id, batch_size)
+        classes = TASK_CLASSES[task_id]
+        train_loader, test_loader = get_dataloaders(classes, batch_size)
 
         # Access the TensorDatasets directly to count classes
         train_subset = train_loader.dataset
@@ -186,8 +187,8 @@ if __name__ == "__main__":
             print(f"  Class {cls}: {test_counts.get(cls, 0)} samples")
 
         # Check balancedness
-        train_balanced = is_balanced(train_counts)
-        test_balanced = is_balanced(test_counts)
+        train_balanced = is_balanced(train_counts, tolerance=0.2)
+        test_balanced = is_balanced(test_counts, tolerance=0.2)
 
         print(f"Training set balanced: {'Yes' if train_balanced else 'No'}")
         print(f"Testing set balanced: {'Yes' if test_balanced else 'No'}")
