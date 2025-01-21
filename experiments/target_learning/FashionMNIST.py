@@ -100,7 +100,7 @@ def train_model(
                     [net.flatten(batch_data), h1, output], dim=1
                 )
 
-            if verbose_level >= 0:
+            if verbose_level >= 1:
                 print(
                     f"Processing batch {batch_idx}/{len(train_loader)} of task {task_id}"
                 )
