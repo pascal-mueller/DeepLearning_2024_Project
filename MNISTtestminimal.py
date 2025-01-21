@@ -102,9 +102,7 @@ def train_model(
 
                 control_loss = criterion(output, batch_labels_god)
 
-                l1_reg = l1_lambda * sum(
-                    p.abs().sum() for p in control_net.parameters()
-                )
+                l1_reg = 0.01 * sum(p.abs().sum() for p in control_net.parameters())
                 # l2_lambda = 1e-2
 
                 # l2_reg = l2_lambda * sum((p**2).sum() for p in control_net.parameters())
