@@ -1,12 +1,13 @@
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 from nn.Net import Net
 from nn.ControlNet import ControlNet
 from utils.colored_prints import *
 from torchvision import datasets, transforms
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader
+
+from utils.constants import DATA_ROOT
 
 
 def print_green(text):

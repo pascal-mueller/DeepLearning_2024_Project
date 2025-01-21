@@ -6,22 +6,14 @@ import numpy as np
 import optuna
 import random
 import sqlite3
-from torchviz import make_dot
 
 from nn.Net import Net
 from nn.ControlNet import ControlNet
 from dataloaders.FashionMNISTDataset import get_dataloaders
+from utils.random_conf import ensure_deterministic
 from utils.save_model_with_grads import save_model_with_grads
 from utils.fisher_information_metric import plot_FIM
 from utils.plot_losses import plot_losses as plot_losses_fn
-from utils.plot_subset import plot_subset as plot_subset_fn
-from utils.plot_data import plot_dataloaders
-
-
-seed = 0
-torch.manual_seed(seed)
-np.random.seed(seed)
-random.seed(seed)
 
 
 BEST_PARAMS = {
@@ -528,11 +520,7 @@ if __name__ == "__main__":
     os.makedirs(results_dir, exist_ok=True)
 
     # Fix seeds
-    # TODO: Make sure we fixed all possible randomness
-    torch.manual_seed(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-    torch.use_deterministic_algorithms(True)
+    ensure_deterministic()
 
     input_size_net = 784  # Flattened image: 28 x 28
     hidden_size_net = 100
