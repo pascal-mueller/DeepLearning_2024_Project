@@ -66,7 +66,9 @@ TASK_CLASSES: Dict[int, List[int]] = {
 #         return x, y
 
 
-def get_dataloaders(classes, train_batch_size=32, test_batch_size=32, device="cpu"):
+def get_dataloaders(task_ids, train_batch_size=32, test_batch_size=32, device="cpu"):
+    classes = list(set(sum([TASK_CLASSES[task_id] for task_id in task_ids],[])))
+
     # Typical MNIST transformations
     transform = transforms.Compose(
         [
