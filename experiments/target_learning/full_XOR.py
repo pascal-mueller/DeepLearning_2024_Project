@@ -170,6 +170,7 @@ def run_experiment(
                     disable=(True or verbose_level <= 0),
                 ):
                     control_optimizer.zero_grad()
+                    net_optimizer.zero_grad()
 
                     # Question: Why do we get the target signal for these
                     # activities? Shouldn't he take the target signal wtt to the

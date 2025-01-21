@@ -3,15 +3,15 @@ import torch.nn as nn
 
 
 class ControlNet(nn.Module):
-    def __init__(self, input_size=32, hidden_size=40, output_size=22, a=1.2):
+    def __init__(self, input_size=32, hidden_size=40, output_size=22, a=1.8):
         super(ControlNet, self).__init__()
         self.input_size = input_size  # 8 input + 20 hidden + 2 output
         self.hidden_size = hidden_size
         self.output_size = output_size  # Control signals for hidden + output neurons
         self.layer1 = nn.Linear(self.input_size, self.hidden_size)
         self.layer2 = nn.Linear(self.hidden_size, self.output_size)
-        self.relu1 = nn.ReLU()
-        self.relu2 = nn.ReLU()
+        self.relu1 = nn.GELU()
+        self.relu2 = nn.GELU()
 
         self.a = a
 
