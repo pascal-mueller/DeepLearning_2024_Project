@@ -67,8 +67,9 @@ TASK_CLASSES: Dict[int, List[int]] = {
 
 
 def get_dataloaders(task_ids, train_batch_size=32, test_batch_size=32, device="cpu"):
-    if type(task_ids) is not list: task_ids = [task_ids] # so single tasks can be passed as well
-    classes = list(set(sum([TASK_CLASSES[task_id] for task_id in task_ids],[])))
+    if type(task_ids) is not list:
+        task_ids = [task_ids]  # so single tasks can be passed as well
+    classes = list(set(sum([TASK_CLASSES[task_id] for task_id in task_ids], [])))
 
     # Typical MNIST transformations
     transform = transforms.Compose(
@@ -79,7 +80,9 @@ def get_dataloaders(task_ids, train_batch_size=32, test_batch_size=32, device="c
     )
 
     # Load the full training and testing datasets
-    train_dataset = torchvision.datasets.MNIST(root=DATA_ROOT, train=True, download=True)
+    train_dataset = torchvision.datasets.MNIST(
+        root=DATA_ROOT, train=True, download=True
+    )
     test_dataset = torchvision.datasets.MNIST(
         root=DATA_ROOT, train=False, transform=transform, download=True
     )

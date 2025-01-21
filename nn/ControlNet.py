@@ -3,7 +3,7 @@ import torch.nn as nn
 
 
 class ControlNet(nn.Module):
-    def __init__(self, input_size=32, hidden_size=40, output_size=22, a=1.8):
+    def __init__(self, input_size=32, hidden_size=40, output_size=22, a=1.2):
         super(ControlNet, self).__init__()
         self.input_size = input_size  # 8 input + 20 hidden + 2 output
         self.hidden_size = hidden_size
