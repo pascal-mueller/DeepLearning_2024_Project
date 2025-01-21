@@ -81,7 +81,7 @@ def run_experiment(
 
     accuracies = {"Task1": [], "Task2": [], "Task3": [], "Task4": []}
 
-    loaders = {taskid: get_dataloaders(TASK_CLASSES[taskid]) for taskid in range(1, 5)}
+    loaders = {taskid: get_dataloaders(taskid) for taskid in range(1, 5)}
 
     for taskid in range(1, 5):
         if verbose_level > 0:

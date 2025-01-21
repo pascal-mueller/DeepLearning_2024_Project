@@ -211,7 +211,7 @@ def run_experiment():
 
     for i in task_ids:
         train_loader, test_loader = get_dataloaders(
-            TASK_CLASSES[i], train_batch_size=256, test_batch_size=128
+            task_ids[:i+1], train_batch_size=256, test_batch_size=128
         )
         train_dataloaders.append(train_loader)
         test_dataloaders.append(test_loader)
