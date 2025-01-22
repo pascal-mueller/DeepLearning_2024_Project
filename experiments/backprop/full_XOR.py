@@ -91,12 +91,12 @@ def run_experiment(
 
     accuracies = {"Task1": [], "Task2": [], "Task3": []}
 
-    loaders = {taskid: get_dataloaders(taskid) for taskid in range(1, 4)}
+    train_loaders, test_loaders = get_dataloaders()
 
     for taskid in range(1, 4):
         if verbose_level > 0:
             print(f"=== Training on Task {taskid} ===")
-        train_loader, _ = loaders[taskid]
+        train_loader = train_loaders[taskid]
 
         train_model(
             model,
@@ -108,7 +108,7 @@ def run_experiment(
 
         # Evaluate on all previous tasks
         for i in range(1, taskid + 1):
-            _, test_loader = loaders[i]
+            test_loader = test_loaders[i]
             acc = test_model(model, test_loader)
             if verbose_level > 0:
                 print(
@@ -211,8 +211,8 @@ if __name__ == "__main__":
     ensure_deterministic()
     # params_75_to_80 should give between 75% and 80%
     params_75_to_80 = {
-        "num_epochs": 600,
-        "learning_rate": 0.1,
+        "num_epochs": 200,
+        "learning_rate": 0.01,
         "l1_lambda": 1e-5,
     }
 
