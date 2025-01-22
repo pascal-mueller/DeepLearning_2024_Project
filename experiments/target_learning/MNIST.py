@@ -422,7 +422,7 @@ if __name__ == "__main__":
         train_batch_size=128,
         test_batch_size=128,
     )
-    breakpoint()
+
     task_id = 0
     train_model(
         task_id,
