@@ -8,3 +8,9 @@ def print_warning(message):
 
 def print_error(message):
     print(f"\033[91m[ERROR]\033[0m {message}")  # Red
+
+
+def print_green(text):
+    green_color_code = "\033[92m"
+    reset_color_code = "\033[0m"
+    print(f"{green_color_code}{text}{reset_color_code}")

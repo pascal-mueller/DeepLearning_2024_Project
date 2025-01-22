@@ -1,29 +1,25 @@
+import torch
+import torch.nn as nn
 import os
 import optuna
 import sqlite3
-import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
 from tqdm import tqdm
-
 from nn.Net import Net
 from nn.ControlNet import ControlNet
+from utils.colored_prints import *
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
 from dataloaders.MNISTDataset import get_dataloaders, TASK_CLASSES
-from utils.colored_prints import *
-from utils.random_conf import ensure_deterministic
-from utils.constants import DATA_ROOT
-from utils.colored_prints import *
-from utils.fisher_information_metric import plot_FIM
 
-BEST_PARAMS = {
-    "num_epochs": 5,
-    "inner_epochs": 200,
-    "learning_rate": 1.651703048219e-05,
-    "control_lr": 1.18078126401598e-05,
-    "control_threshold": 0.00603542302442579,
-    "l1_lambda": 0.000141872888572121,
-}
+from utils.constants import DATA_ROOT
+
+from utils.colored_prints import *
+
+
+def print_green(text):
+    green_color_code = "\033[92m"
+    reset_color_code = "\033[0m"
+    print(f"{green_color_code}{text}{reset_color_code}")
 
 
 def get_classes(task_id):
@@ -214,7 +210,9 @@ def train_model(
         #     break
 
 
-def run_experiment(params, plot_fim=False):
+def run_experiment(params):
+    from utils.random_conf import ensure_deterministic
+
     ensure_deterministic()
     num_epochs = params["num_epochs"]
     inner_epochs = params["inner_epochs"]
@@ -308,9 +306,6 @@ def run_experiment(params, plot_fim=False):
                 print(f"[without] Task {task_id} - {sub_task_id}: {acc_without:.2f}%")
         print("\n")
 
-    if plot_fim:
-        plot_FIM(net, control_net, train_dataloaders)
-
 
 # Objective function for Optuna
 def objective(trial, run_name):
@@ -380,67 +375,23 @@ def run_optuna_study(
     return study
 
 
-if __name__ == "__main__":
-    print(f"Running MNIST with full dataset.")
+# params = {
+#     "num_epochs": 3,
+#     "inner_epochs": 188,
+#     "learning_rate": 0.0001,
+#     "control_lr": 0.0001,
+#     "control_threshold": 0.00032949549118669864,
+#     "l1_lambda": 0.0,
+# }
+params = {
+    "num_epochs": 25,
+    "inner_epochs": 200,
+    "learning_rate": 1.651703048219e-05,
+    "control_lr": 1.18078126401598e-05,
+    "control_threshold": 0.00603542302442579,
+    "l1_lambda": 0.000141872888572121,
+}
 
-    params = BEST_PARAMS
-    num_epochs = params["num_epochs"]
-    inner_epochs = params["inner_epochs"]
-    learning_rate = params["learning_rate"]
-    control_lr = params["control_lr"]
-    control_threshold = params["control_threshold"]
-    l1_lambda = params["l1_lambda"]
 
-    # Size of all the "activities" from Net we use as input
-    input_size_net = 784  # Flattened image: 28 x 28
-    hidden_size_net = 100
-    output_size_net = 10
-
-    hidden_size_control = 100
-    output_size_control = 3 * hidden_size_net
-
-    input_size_control = input_size_net + 3 * hidden_size_net + output_size_net
-
-    net = Net(
-        input_size=input_size_net,
-        hidden_size=hidden_size_net,
-        output_size=output_size_net,
-        softmax=False,
-    )
-
-    control_net = ControlNet(
-        input_size=input_size_control,
-        hidden_size=hidden_size_control,
-        output_size=output_size_control,
-    )
-
-    criterion = nn.CrossEntropyLoss()
-    control_optimizer = torch.optim.Adam(control_net.parameters(), lr=float(control_lr))
-    net_optimizer = torch.optim.Adam(net.parameters(), lr=float(learning_rate))
-
-    train_dataloaders, test_dataloaders = get_dataloaders(
-        train_batch_size=128,
-        test_batch_size=128,
-    )
-
-    task_id = 0
-    train_model(
-        task_id,
-        net,
-        control_net,
-        train_dataloaders[task_id],
-        test_dataloaders[task_id],
-        criterion,
-        control_optimizer,
-        net_optimizer,
-        control_threshold,
-        num_epochs,
-        inner_epochs,
-        l1_lambda,
-    )
-
-    acc_test = evaluate_model(
-        net, control_net, test_dataloaders[task_id], useSignals=True
-    )
-
-    print(f"Test Accuracy: {acc_test:.2f}%")
+run_experiment(params)
+# run_optuna_study("test_minimalexample", 100, 8)
