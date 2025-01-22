@@ -65,9 +65,7 @@ def train_model(
     inner_epochs,
     l1_lambda,
 ):
-    task_classes = torch.tensor(TASK_CLASSES[task_id])
-
-    pbar = tqdm(range(num_epochs), desc=f"Epochs", leave=False, disable=False)
+    pbar = tqdm(range(num_epochs), desc=f"Epochs", leave=False, disable=True)
 
     for epoch in pbar:
         # print(f"Press any key to start epoch {epoch}")
@@ -185,7 +183,7 @@ def train_model(
 
         acc = evaluate_model(net, control_net, test_loader_god, useSignals=True)
 
-        print(f"Task {task_id} - Epoch {epoch}: {acc:.2f}%")
+        # print(f"Task {task_id} - Epoch {epoch}: {acc:.2f}%")
         # if acc > 80:
         #     print("Early stopping")
         #     break
@@ -254,7 +252,7 @@ def run_experiment(params):
 
     # train_dataloaders.append(train_loader_god)
     # test_dataloaders.append(test_loader_god)
-    breakpoint()
+
     train_model(
         0,
         net,
@@ -270,28 +268,40 @@ def run_experiment(params):
         l1_lambda,
     )
 
-    acc = evaluate_model(net, control_net, test_loader, useSignals=True)
-    return acc
+    for task_id in range(1, 5):
+        if task_id == 0:
+            print_info("Training on all data")
+        else:
+            print_info(f"Training on Task {task_id}")
 
-    # for sub_task_id in range(task_id):
-    #     acc_with = evaluate_model(
-    #         net, control_net, test_dataloaders[sub_task_id], useSignals=True
-    #     )
-    #     acc_without = evaluate_model(
-    #         net, control_net, test_dataloaders[sub_task_id], useSignals=False
-    #     )
-    #     if task_id == sub_task_id + 1:
-    #         print_green(
-    #             f"[with] Task {task_id} - {sub_task_id + 1}: {acc_with:.2f}%"
-    #         )
-    #         print_green(
-    #             f"[without] Task {task_id} - {sub_task_id + 1}: {acc_without:.2f}%"
-    #         )
-    #     else:
-    #         print(f"[with] Task {task_id} - {sub_task_id + 1}: {acc_with:.2f}%")
-    #         print(
-    #             f"[without] Task {task_id} - {sub_task_id + 1}: {acc_without:.2f}%"
-    #         )
+        acc_train = evaluate_model(
+            net, control_net, train_dataloaders[task_id], useSignals=True
+        )
+        acc_test = evaluate_model(
+            net, control_net, test_dataloaders[task_id], useSignals=True
+        )
+
+        print(
+            f"Task {task_id} - Train Acc: {acc_train:.2f}% - Test Acc: {acc_test:.2f}%"
+        )
+
+        for sub_task_id in range(1, task_id + 1):
+            acc_with = evaluate_model(
+                net, control_net, test_dataloaders[sub_task_id], useSignals=True
+            )
+            acc_without = evaluate_model(
+                net, control_net, test_dataloaders[sub_task_id], useSignals=False
+            )
+
+            if task_id == sub_task_id:
+                print_green(f"[with] Task {task_id} - {sub_task_id}: {acc_with:.2f}%")
+                print_green(
+                    f"[without] Task {task_id} - {sub_task_id}: {acc_without:.2f}%"
+                )
+            else:
+                print(f"[with] Task {task_id} - {sub_task_id}: {acc_with:.2f}%")
+                print(f"[without] Task {task_id} - {sub_task_id}: {acc_without:.2f}%")
+        print("\n")
 
 
 # Objective function for Optuna
@@ -371,7 +381,7 @@ def run_optuna_study(
 #     "l1_lambda": 0.0,
 # }
 params = {
-    "num_epochs": 300,
+    "num_epochs": 25,
     "inner_epochs": 200,
     "learning_rate": 1.651703048219e-05,
     "control_lr": 1.18078126401598e-05,
@@ -380,6 +390,5 @@ params = {
 }
 
 
-acc = run_experiment(params)
-print(acc)
+run_experiment(params)
 # run_optuna_study("test_minimalexample", 100, 8)
