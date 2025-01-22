@@ -4,6 +4,45 @@ from torch.utils.data import Dataset, DataLoader, Subset
 import numpy as np
 from collections import Counter
 
+def get_dataloaders(
+    train_batch_size=32,
+    test_batch_size=32,
+    shuffle_train=True,
+    split_ratio=0.8,
+    n_samples=2000
+):
+    train_loaders = {}
+    test_loaders = {}
+    for task_id in range(1, 4):
+        dataset = XORDataset(task_id, n_samples=n_samples)
+        labels = dataset.labels.argmax(dim=1).numpy()
+
+        class0_indices = np.where(labels == 0)[0]
+        class1_indices = np.where(labels == 1)[0]
+
+        np.random.shuffle(class0_indices)
+        np.random.shuffle(class1_indices)
+
+        split_class0 = int(len(class0_indices) * split_ratio)
+        split_class1 = int(len(class1_indices) * split_ratio)
+
+        train_indices = np.concatenate([class0_indices[:split_class0], class1_indices[:split_class1]])
+        test_indices = np.concatenate([class0_indices[split_class0:], class1_indices[split_class1:]])
+
+        np.random.shuffle(train_indices)
+        np.random.shuffle(test_indices)
+
+        train_subset = Subset(dataset, train_indices)
+        test_subset = Subset(dataset, test_indices)
+
+        train_loader = DataLoader(train_subset, batch_size=train_batch_size, shuffle=shuffle_train)
+        test_loader = DataLoader(test_subset, batch_size=test_batch_size, shuffle=False)
+
+        train_loaders[task_id] = train_loader
+        test_loaders[task_id] = test_loader
+
+    return train_loaders, test_loaders
+
 
 class XORDataset(Dataset):
     def __init__(self, task_id, n_samples=50, noise=0.1):
@@ -81,69 +120,21 @@ class XORDataset(Dataset):
         plt.show()
 
 
-def get_dataloaders(task_id, batch_size=32, split_ratio=0.8, n_samples=50, noise=0.1):
-    """
-    Creates balanced train and test DataLoaders for the specified task.
-
-    Args:
-        task_id (int): Identifier for the task (1, 2, or 3).
-        batch_size (int, optional): Number of samples per batch. Defaults to 32.
-        split_ratio (float, optional): Proportion of the dataset to include in the train split. Defaults to 0.8.
-        n_samples (int, optional): Total number of samples in the dataset. Defaults to 50.
-        noise (float, optional): Standard deviation of the Gaussian noise added to the data. Defaults to 0.1.
-
-    Returns:
-        Tuple[DataLoader, DataLoader]: Training and testing DataLoaders.
-    """
-    dataset = XORDataset(task_id, n_samples=n_samples, noise=noise)
-
-    # Extract labels as integers
-    labels = dataset.labels.argmax(dim=1).numpy()
-
-    # Find indices for each class
-    class0_indices = np.where(labels == 0)[0]
-    class1_indices = np.where(labels == 1)[0]
-
-    # Shuffle the indices
-    np.random.shuffle(class0_indices)
-    np.random.shuffle(class1_indices)
-
-    # Calculate split sizes
-    split_class0 = int(len(class0_indices) * split_ratio)
-    split_class1 = int(len(class1_indices) * split_ratio)
-
-    # Split indices
-    train_indices = np.concatenate(
-        [class0_indices[:split_class0], class1_indices[:split_class1]]
-    )
-    test_indices = np.concatenate(
-        [class0_indices[split_class0:], class1_indices[split_class1:]]
-    )
-
-    # Shuffle the combined indices
-    np.random.shuffle(train_indices)
-    np.random.shuffle(test_indices)
-
-    # Create subsets
-    train_subset = Subset(dataset, train_indices)
-    test_subset = Subset(dataset, test_indices)
-
-    # Create DataLoaders
-    train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_subset, batch_size=batch_size, shuffle=False)
-
-    return train_loader, test_loader
-
-
 # Run this file directly to test for balancedness
 if __name__ == "__main__":
-    for task_id in range(1, 4):
-        batch_size = 32
-        split_ratio = 0.8  # 80% training, 20% testing
+    batch_size = 32
+    split_ratio = 0.8  # 80% training, 20% testing
+    n_samples = 2000
 
-        train_loader, test_loader = get_dataloaders(
-            task_id, n_samples=2000, batch_size=batch_size, split_ratio=split_ratio
-        )
+    train_dataloaders, test_dataloaders = get_dataloaders(
+        test_batch_size=batch_size,
+        train_batch_size=batch_size,
+        split_ratio=split_ratio,
+        n_samples=n_samples
+    )
+
+    for task_id in range(1, 4):
+        train_loader, test_loader = train_dataloaders[task_id], test_dataloaders[task_id]
 
         # Function to count classes in a DataLoader
         def count_classes(dataloader):
