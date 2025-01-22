@@ -3,7 +3,7 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 
 
-def compute_fisher_org(net, data_loader, device="cpu"):
+def compute_fisher_org(net, control_net, data_loader, with_signal=True, device="cpu"):
     """
     Compute the diagonal Fisher Information for 'net' w.r.t.
     cross-entropy loss on the given data_loader.
@@ -23,16 +23,34 @@ def compute_fisher_org(net, data_loader, device="cpu"):
     # Reset control signals to ones to avoid dimension mismatch during forward pass
     net.reset_control_signals()
 
-    for batch_data, batch_labels, _ in data_loader:
+    for batch_data, batch_labels in data_loader:
         batch_data = batch_data.to(device)
         batch_labels = batch_labels.to(device)
-        batch_indices = batch_labels.argmax(dim=1)
 
         net.zero_grad()
-        # Reset control signals again for each batch
-        net.reset_control_signals()
+        control_net.zero_grad()
+
+        if with_signal:
+            net.reset_control_signals()
+            with torch.no_grad():
+                inp = net.flatten(batch_data)
+                h1 = net.layer1(inp)
+                foo = net.h1_mrelu(h1)
+                h2 = net.layer2(foo)
+                h3 = net.layer3(net.h2_mrelu(h2))
+                output = net.layer4(net.h3_mrelu(h3))
+                current_activities = torch.cat([inp, h1, h2, h3, output], dim=1)
+
+                control_signals = control_net(current_activities)
+
+            net.set_control_signals(control_signals)
+        else:
+            # Reset control signals again for each batch
+            net.reset_control_signals()
+
+        # net.reset_control_signals()
         outputs = net(batch_data)
-        loss = criterion(outputs, batch_indices)
+        loss = criterion(outputs, batch_labels)
         loss.backward()
 
         bs = batch_data.size(0)
@@ -187,7 +205,7 @@ def plot_FIM(model, control_model, train_dataloaders):
         #     model, control_model, dataloader
         # )
 
-        fisher_net = compute_fisher_org(model, dataloader)
+        fisher_net = compute_fisher_org(model, control_model, dataloader)
 
         fisher_net_flat = flatten_fisher(fisher_net)
 

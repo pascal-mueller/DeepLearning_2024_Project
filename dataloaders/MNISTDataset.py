@@ -2,15 +2,11 @@ import torch
 from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
 
+
 TASK_CLASSES = {
-    0: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],  # God mode
-    1: [0, 2, 4, 6],
-    2: [1, 3],
-    3: [5, 7, 9],
-    4: [8],
-}
-TASK_CLASSES_ = {
-    0: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],  # God mode
+    # All data
+    0: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    # CL tasks
     1: [0, 1],
     2: [2, 3],
     3: [4, 5],
@@ -49,8 +45,8 @@ def get_dataloaders(
     )
 
     # Get labels
-    train_labels = torch.tensor(train_dataset_full.targets)
-    test_labels = torch.tensor(test_dataset_full.targets)
+    train_labels = train_dataset_full.targets
+    test_labels = test_dataset_full.targets
 
     train_masks = []
     test_masks = []
@@ -76,8 +72,8 @@ def get_dataloaders(
 
         if seperate_data or i == 0:
             # Create subsets
-            train_subset = Subset(train_dataset_full, torch.tensor(train_idxs))
-            test_subset = Subset(test_dataset_full, torch.tensor(test_idxs))
+            train_subset = Subset(train_dataset_full, train_idxs)
+            test_subset = Subset(test_dataset_full, test_idxs)
 
             # Create dataloaders
             train_dataloader = DataLoader(

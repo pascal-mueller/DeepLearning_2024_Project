@@ -1,17 +1,9 @@
 import torch
-from torch.utils.data import DataLoader, TensorDataset
-import torchvision
-from torchvision import transforms
-from typing import Tuple, List, Dict
-from collections import Counter
+from torch.utils.data import DataLoader, Subset
+from torchvision import datasets, transforms
 
-from utils.colored_prints import print_info
-from utils.constants import DATA_ROOT
-
-# Define the mapping from task_id to class labels
-TASK_CLASSES: Dict[int, List[int]] = {
-    # Task 0: Not part of the continual learning setup. This is just to test the model.
-    0: [0],
+TASK_CLASSES = {
+    0: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],  # God mode
     # CL setup: Task 1, Task 2, Task 3, Task 4
     1: [0, 2, 4, 6],  # T-Shirt/Top, Pullover, Coat, Shirt
     2: [1, 3],  # Trouser, Dress
@@ -21,161 +13,111 @@ TASK_CLASSES: Dict[int, List[int]] = {
 
 
 def get_dataloaders(
-    task_id: int, batch_size: int = 64, device: torch.device = torch.device("cpu")
-) -> Tuple[DataLoader, DataLoader]:
+    train_batch_size=32,
+    test_batch_size=32,
+    shuffle_train=True,
+    return_indices=False,
+    return_masks=False,
+    seperate_data=False,
+):
     """
-    Returns the training and testing DataLoaders for a given task.
+    Returns train and test dataloaders for all tasks as well as god mode.
+    Optionally also returns the masks and indices for test and train data for
+    each task.
 
-    Args:
-        task_id (int): The ID of the task (e.g., 1, 2, 3, 4).
-        batch_size (int): The batch size for the DataLoaders.
-
-    Returns:
-        Tuple[DataLoader, DataLoader]: A tuple containing the training and testing DataLoaders.
+    idx: 0 = all data
+    idx: 1-4 = task 1-4
     """
-
-    if task_id == 0:
-        print_info(
-            f"Using task_id=0. This uses all classes. This is only meant to test the model. This is NOT a continual learning scenario!"
-        )
-
-    if task_id not in TASK_CLASSES:
-        raise ValueError(
-            f"Invalid task_id {task_id}. Must be one of {list(TASK_CLASSES.keys())}."
-        )
-
-    classes = TASK_CLASSES[task_id]
-
-    # Define the transformation
-    # transform = transforms.ToTensor()
+    # Basic transform
     transform = transforms.Compose(
-        [
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,)),
-        ]
+        [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
     )
 
-    # Load the full training and testing datasets
-    train_dataset = torchvision.datasets.FashionMNIST(
-        root=DATA_ROOT, train=True, transform=transform, download=True
+    # Load full MNIST datasets
+    train_dataset_full = datasets.FashionMNIST(
+        root="local_data", train=True, transform=transform, download=True
     )
-    test_dataset = torchvision.datasets.FashionMNIST(
-        root=DATA_ROOT, train=False, transform=transform, download=True
-    )
-
-    # Function to filter dataset indices based on desired classes
-    def filter_indices(
-        dataset: torchvision.datasets.FashionMNIST, classes: List[int]
-    ) -> List[int]:
-        return [idx for idx, label in enumerate(dataset.targets) if label in classes]
-
-    # Filter indices for the current task
-    train_indices = filter_indices(train_dataset, classes)
-    test_indices = filter_indices(test_dataset, classes)
-
-    # Create filtered data and move to GPU
-    train_data = train_dataset.data[train_indices].to(device).float()
-
-    train_targets = train_dataset.targets[train_indices].to(device)
-
-    test_data = test_dataset.data[test_indices].to(device).float()
-    test_targets = test_dataset.targets[test_indices].to(device)
-
-    # Create TensorDatasets using GPU-backed data
-    train_subset = TensorDataset(train_data, train_targets)
-    test_subset = TensorDataset(test_data, test_targets)
-
-    # Create DataLoaders
-    train_loader = DataLoader(
-        train_subset,
-        batch_size=batch_size,
-        shuffle=True,  # Shuffle for training
-        num_workers=0,  # No extra processes needed since data is on GPU
+    test_dataset_full = datasets.FashionMNIST(
+        root="local_data", train=False, transform=transform, download=True
     )
 
-    test_loader = DataLoader(
-        test_subset,
-        batch_size=batch_size,
-        shuffle=False,  # No need to shuffle for testing
-        num_workers=0,
-    )
+    # Get labels
+    train_labels = train_dataset_full.targets
+    test_labels = test_dataset_full.targets
 
-    return train_loader, test_loader
+    train_masks = []
+    test_masks = []
+    train_indices = []
+    test_indices = []
+    train_dataloaders = []
+    test_dataloaders = []
 
+    # Create masks, indices and dataloaders for each task
+    for i, task_classes in enumerate(TASK_CLASSES.values()):
+        # Create masks
+        train_mask = torch.isin(train_labels, torch.tensor(task_classes))
+        test_mask = torch.isin(test_labels, torch.tensor(task_classes))
 
-def count_classes(dataset: TensorDataset) -> Dict[int, int]:
-    """
-    Counts the number of samples per class in a given dataset.
+        # Create indices
+        train_idxs = torch.nonzero(train_mask).squeeze()
+        test_idxs = torch.nonzero(test_mask).squeeze()
 
-    Args:
-        dataset (TensorDataset): The dataset to analyze.
+        train_masks.append(train_masks)
+        test_masks.append(test_masks)
+        train_indices.append(train_idxs)
+        test_indices.append(test_idxs)
 
-    Returns:
-        Dict[int, int]: A dictionary mapping class labels to their respective counts.
-    """
-    targets = dataset.tensors[1].tolist()  # Extract labels
-    class_counts = Counter(targets)
-    return dict(class_counts)
+        if seperate_data or i == 0:
+            # Create subsets
+            train_subset = Subset(train_dataset_full, train_idxs)
+            test_subset = Subset(test_dataset_full, test_idxs)
 
+            # Create dataloaders
+            train_dataloader = DataLoader(
+                train_subset, batch_size=train_batch_size, shuffle=shuffle_train
+            )
+            test_dataloader = DataLoader(
+                test_subset, batch_size=test_batch_size, shuffle=False
+            )
+            train_dataloaders.append(train_dataloader)
+            test_dataloaders.append(test_dataloader)
 
-def is_balanced(class_counts: Dict[int, int], tolerance: float = 0.05) -> bool:
-    """
-    Checks if the class counts are balanced within a specified tolerance.
+    if not seperate_data:
+        train_idxs = []
+        test_idxs = []
+        # next() skips the first element
+        for train_indices, test_indices in zip(train_indices[1:], test_indices[1:]):
+            train_idxs += train_indices.tolist()
+            test_idxs += test_indices.tolist()
 
-    Args:
-        class_counts (Dict[int, int]): A dictionary mapping class labels to their counts.
-        tolerance (float): The allowed relative difference between class counts.
+            # Create subsets
+            train_subset = Subset(train_dataset_full, torch.tensor(train_idxs))
+            test_subset = Subset(test_dataset_full, torch.tensor(test_idxs))
 
-    Returns:
-        bool: True if balanced, False otherwise.
-    """
-    counts = list(class_counts.values())
-    if not counts:
-        return False
-    mean_count = sum(counts) / len(counts)
-    for count in counts:
-        if abs(count - mean_count) / mean_count > tolerance:
-            return False
-    return True
+            # Create dataloaders
+            train_dataloader = DataLoader(
+                train_subset, batch_size=train_batch_size, shuffle=shuffle_train
+            )
+            test_dataloader = DataLoader(
+                test_subset, batch_size=test_batch_size, shuffle=False
+            )
+            train_dataloaders.append(train_dataloader)
+            test_dataloaders.append(test_dataloader)
 
+    if return_indices and return_masks:
+        return (
+            train_dataloaders,
+            test_dataloaders,
+            train_indices,
+            test_indices,
+            train_masks,
+            test_masks,
+        )
 
-if __name__ == "__main__":
-    """
-    Tests the balancedness of each task's training and testing datasets.
-    """
-    # Define task IDs
-    task_ids = list(TASK_CLASSES.keys())
-    # Define batch size (arbitrary, since we're accessing dataset directly)
-    batch_size = 64
+    if return_indices:
+        return train_dataloaders, test_dataloaders, train_indices, test_indices
 
-    for task_id in task_ids:
-        print(f"\n--- Task {task_id} ---")
-        train_loader, test_loader = get_dataloaders(task_id, batch_size)
+    if return_masks:
+        return train_dataloaders, test_dataloaders, train_masks, test_masks
 
-        # Access the TensorDatasets directly to count classes
-        train_subset = train_loader.dataset
-        test_subset = test_loader.dataset
-
-        train_counts = count_classes(train_subset)
-        test_counts = count_classes(test_subset)
-
-        # Display class counts
-        print("Training set class counts:")
-        for cls in TASK_CLASSES[task_id]:
-            print(f"  Class {cls}: {train_counts.get(cls, 0)} samples")
-        print("Testing set class counts:")
-        for cls in TASK_CLASSES[task_id]:
-            print(f"  Class {cls}: {test_counts.get(cls, 0)} samples")
-
-        # Check balancedness
-        train_balanced = is_balanced(train_counts)
-        test_balanced = is_balanced(test_counts)
-
-        print(f"Training set balanced: {'Yes' if train_balanced else 'No'}")
-        print(f"Testing set balanced: {'Yes' if test_balanced else 'No'}")
-
-        # Optional: Assert balancedness
-        assert train_balanced, f"Training set for Task {task_id} is not balanced."
-        assert test_balanced, f"Testing set for Task {task_id} is not balanced."
-
-    print("\nAll tasks have balanced training and testing datasets.")
+    return train_dataloaders, test_dataloaders

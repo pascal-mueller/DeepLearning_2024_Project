@@ -18,7 +18,7 @@ from utils.fisher_information_metric import plot_FIM
 
 BEST_PARAMS = {
     "num_epochs": 5,
-    "inner_epochs": 200,
+    "inner_epochs": 250,
     "learning_rate": 1.651703048219e-05,
     "control_lr": 1.18078126401598e-05,
     "control_threshold": 0.00603542302442579,
@@ -255,9 +255,6 @@ def run_experiment(params, plot_fim=False):
         test_batch_size=128,
     )
 
-    # train_dataloaders.append(train_loader_god)
-    # test_dataloaders.append(test_loader_god)
-
     for task_id in range(1, 5):
         if task_id == 0:
             print_info("Training on all data")
@@ -309,7 +306,11 @@ def run_experiment(params, plot_fim=False):
         print("\n")
 
     if plot_fim:
-        plot_FIM(net, control_net, train_dataloaders)
+        train_dataloaders, _ = get_dataloaders(
+            train_batch_size=128, test_batch_size=128, seperate_data=True
+        )
+        # We exlcude the first dataloader as it is not relevant for CL
+        plot_FIM(net, control_net, train_dataloaders[1:])
 
 
 # Objective function for Optuna
