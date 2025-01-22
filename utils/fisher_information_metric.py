@@ -177,13 +177,11 @@ def flatten_fisher(fisher_dict):
     return fisher_flat.cpu().numpy()
 
 
-def plot_FIM(model, control_model, dataloaders):
+def plot_FIM(model, control_model, train_dataloaders):
     # compute_fisher_net_and_control_net(model, control_model, dataloader)
-    fig, axes = plt.subplots(
-        len(dataloaders["train"]), 1, figsize=(12, 10), sharex=True
-    )
+    fig, axes = plt.subplots(len(train_dataloaders), 1, figsize=(12, 10), sharex=True)
 
-    for i, (dataloader, ax) in enumerate(zip(dataloaders["train"], axes)):
+    for i, (dataloader, ax) in enumerate(zip(train_dataloaders, axes)):
         # return
         # fisher_net, fisher_control_net = compute_fisher_net_and_control_net(
         #     model, control_model, dataloader

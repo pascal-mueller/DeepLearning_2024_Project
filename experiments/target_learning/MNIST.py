@@ -14,6 +14,7 @@ from utils.colored_prints import *
 from utils.random_conf import ensure_deterministic
 from utils.constants import DATA_ROOT
 from utils.colored_prints import *
+from utils.fisher_information_metric import plot_FIM
 
 BEST_PARAMS = {
     "num_epochs": 5,
@@ -213,7 +214,7 @@ def train_model(
         #     break
 
 
-def run_experiment(params):
+def run_experiment(params, plot_fim=False):
     ensure_deterministic()
     num_epochs = params["num_epochs"]
     inner_epochs = params["inner_epochs"]
@@ -306,6 +307,9 @@ def run_experiment(params):
                 print(f"[with] Task {task_id} - {sub_task_id}: {acc_with:.2f}%")
                 print(f"[without] Task {task_id} - {sub_task_id}: {acc_without:.2f}%")
         print("\n")
+
+    if plot_fim:
+        plot_FIM(net, control_net, train_dataloaders)
 
 
 # Objective function for Optuna
