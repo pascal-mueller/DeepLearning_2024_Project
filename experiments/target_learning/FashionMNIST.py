@@ -17,12 +17,12 @@ from utils.colored_prints import *
 from utils.fisher_information_metric import plot_FIM
 
 BEST_PARAMS = {
-    "num_epochs": 5,
+    "num_epochs": 11,
     "inner_epochs": 200,
     "learning_rate": 1.651703048219e-05,
     "control_lr": 1.18078126401598e-05,
     "control_threshold": 0.00603542302442579,
-    "l1_lambda": 0.000141872888572121,
+    "l1_lambda": 0.0141872888572121,
 }
 
 
@@ -114,14 +114,14 @@ def train_model(
 
                 control_loss = criterion(output, batch_labels_god)
 
-                l1_reg = 0.01 * sum(p.abs().sum() for p in control_net.parameters())
-                # l2_lambda = 1e-2
+                # l1_reg = 0.01 * sum(p.abs().sum() for p in control_net.parameters())
+                l2_lambda = 1e-2
 
-                # l2_reg = l2_lambda * sum((p**2).sum() for p in control_net.parameters())
+                l2_reg = l2_lambda * sum((p**2).sum() for p in control_net.parameters())
                 # l1_reg = l1_lambda * sum(
                 #     (output - 1).abs().sum() for output in net(batch_data_god)
                 # )
-                total_control_loss = control_loss + l1_reg
+                total_control_loss = control_loss + l2_reg
 
                 total_control_loss.backward()
                 control_optimizer.step()
@@ -279,6 +279,10 @@ def run_experiment(params, plot_fim=False):
             l1_lambda,
         )
 
+        if plot_fim:
+            # We exlcude the first dataloader as it is not relevant for CL
+            plot_FIM(net, control_net, train_dataloaders[task_id], task_id)
+
         acc_train = evaluate_model(
             net, control_net, train_dataloaders[task_id], useSignals=True
         )
@@ -307,9 +311,6 @@ def run_experiment(params, plot_fim=False):
                 print(f"[with] Task {task_id} - {sub_task_id}: {acc_with:.2f}%")
                 print(f"[without] Task {task_id} - {sub_task_id}: {acc_without:.2f}%")
         print("\n")
-
-    if plot_fim:
-        plot_FIM(net, control_net, train_dataloaders)
 
 
 # Objective function for Optuna

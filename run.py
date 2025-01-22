@@ -259,6 +259,20 @@ def run_experiment(
 
         return
 
+    if experiment_name == "tl_mnist":
+        from experiments.target_learning import MNIST
+
+        params = MNIST.BEST_PARAMS
+        print(f"Running experiment: {experiment_name} with params:\n")
+        pprint(params)
+        print("\n")
+        MNIST.run_experiment(
+            params,
+            plot_fim=plot_fim,
+        )
+
+        return
+
     if experiment_name == "tl_fmnist":
         from experiments.target_learning import FashionMNIST
 
@@ -266,17 +280,13 @@ def run_experiment(
         print(f"Running experiment: {experiment_name} with params:\n")
         pprint(params)
         print("\n")
-        _, perf, avg_perf = FashionMNIST.run_experiment(
+        FashionMNIST.run_experiment(
             params,
-            run_name=run_name,
-            plot_data=plot_data,
-            plot_losses=plot_losses,
             plot_fim=plot_fim,
-            verbose_level=0,
         )
-        print(f"\nAverage Performance: {avg_perf}")
 
         return
+
     #
     # BACKPROP EXPERIMENTS
     #

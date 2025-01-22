@@ -17,7 +17,7 @@ from utils.colored_prints import *
 from utils.fisher_information_metric import plot_FIM
 
 BEST_PARAMS = {
-    "num_epochs": 5,
+    "num_epochs": 10,
     "inner_epochs": 250,
     "learning_rate": 1.651703048219e-05,
     "control_lr": 1.18078126401598e-05,
