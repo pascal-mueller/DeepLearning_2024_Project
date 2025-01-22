@@ -13,6 +13,8 @@ from dataloaders.MNISTDataset import get_dataloaders, TASK_CLASSES
 
 from utils.constants import DATA_ROOT
 
+from utils.colored_prints import *
+
 
 def print_green(text):
     green_color_code = "\033[92m"
@@ -54,6 +56,7 @@ def train_model(
     net,
     control_net,
     train_loader_god,
+    test_loader_god,
     criterion,
     control_optimizer,
     net_optimizer,
@@ -71,7 +74,7 @@ def train_model(
         # input()
         batch_losses = []
 
-        for batch_data_god, batch_labels_god in train_loader_god:
+        for batch_id, (batch_data_god, batch_labels_god) in enumerate(train_loader_god):
             no_god_mask = torch.isin(
                 batch_labels_god,
                 torch.tensor(task_classes),
@@ -91,6 +94,7 @@ def train_model(
                 current_activities = torch.cat([inp, h1, h2, h3, output], dim=1)
 
             old_loss = float("inf")
+            converged = False
             for inner_epoch in range(inner_epochs):
                 control_optimizer.zero_grad()
                 net_optimizer.zero_grad()  # TODO: Do I need this?
@@ -115,19 +119,24 @@ def train_model(
                 control_optimizer.step()
 
                 if abs(old_loss - total_control_loss.item()) < control_threshold:
-                    # print(f"Converged after {inner_epoch} epochs")
+                    converged = True
+                    print_info(f"Converged after {inner_epoch} epochs")
                     # if inner_epoch == 1:
                     #     breakpoint()
                     break
 
                 old_loss = total_control_loss.item()
 
-            print(total_control_loss.item())
+            if not converged:
+                print_error(f"Not converged")
+                converged = False
+
+            print(f"{batch_id}/{len(train_loader_god)} ", total_control_loss.item())
 
             if control_loss.item() > 0.01:
                 batch_losses.append(total_control_loss.item())
                 with torch.no_grad():
-                    # net.set_control_signals(control_signals)
+                    net.set_control_signals(control_signals)
                     control_signals = control_net(current_activities)
                     # a.shape is [batch_size, hidden_size + output_size]
                     # control_signals = control_signals[no_god_mask]
@@ -146,7 +155,7 @@ def train_model(
                     # Layer 1 weight update
                     x = net.flatten(batch_data_god)
                     phi = net.h1_mrelu(net.layer1(x))
-                    r_post_adjusted = phi * a1 * a1_diff
+                    r_post_adjusted = phi * a1_diff
                     dw = r_post_adjusted.T @ x
                     dw = dw / x.shape[0]
                     net.layer1.weight.grad = dw
@@ -155,7 +164,7 @@ def train_model(
                     x2 = net.h1_mrelu(net.layer1(net.flatten(batch_data_god)))
                     phi2 = net.h2_mrelu(net.layer2(x2))
 
-                    r_post_adjusted2 = phi2 * a2 * a2_diff
+                    r_post_adjusted2 = phi2 * a2_diff
                     dw2 = r_post_adjusted2.T @ x2
                     dw2 = dw2 / x2.shape[0]
                     net.layer2.weight.grad = dw2
@@ -168,15 +177,24 @@ def train_model(
                     )
                     phi3 = net.h3_mrelu(net.layer3(x3))
 
-                    r_post_adjusted3 = phi3 * a3 * a3_diff
+                    r_post_adjusted3 = phi3 * a3_diff
                     dw3 = r_post_adjusted3.T @ x3
                     dw3 = dw3 / x3.shape[0]
                     net.layer3.weight.grad = dw3
 
-                    net_optimizer.step()
+                    # print(dw.mean(), dw2.mean(), dw3.mean())
+
+                net_optimizer.step()
 
         epoch_loss = sum(batch_losses) / len(batch_losses) if batch_losses else 0
         pbar.set_postfix(avg_epoch_loss=epoch_loss)
+
+        acc = evaluate_model(net, control_net, test_loader_god, useSignals=True)
+
+        print(f"Task {task_id} - Epoch {epoch}: {acc:.2f}%")
+        if acc > 80:
+            print("Early stopping")
+            break
 
 
 def run_experiment(params):
@@ -192,7 +210,7 @@ def run_experiment(params):
 
     # Size of all the "activities" from Net we use as input
     input_size_net = 784  # Flattened image: 28 x 28
-    hidden_size_net = 200
+    hidden_size_net = 100
     output_size_net = 10
 
     hidden_size_control = 400
@@ -235,6 +253,7 @@ def run_experiment(params):
             net,
             control_net,
             train_loader_god,
+            test_loader_god,
             criterion,
             control_optimizer,
             net_optimizer,
@@ -336,14 +355,23 @@ def run_optuna_study(
     return study
 
 
+# params = {
+#     "num_epochs": 3,
+#     "inner_epochs": 188,
+#     "learning_rate": 0.0001,
+#     "control_lr": 0.0001,
+#     "control_threshold": 0.00032949549118669864,
+#     "l1_lambda": 0.0,
+# }
 params = {
-    "num_epochs": 3,
-    "inner_epochs": 188,
+    "num_epochs": 25,
+    "inner_epochs": 200,
     "learning_rate": 0.0001,
     "control_lr": 0.0001,
-    "control_threshold": 0.00032949549118669864,
-    "l1_lambda": 0.0,
+    "control_threshold": 1e-3,
+    "l1_lambda": 0.01,
 }
+
 acc = run_experiment(params)
 print(acc)
 # run_optuna_study("test_minimalexample", 100, 8)

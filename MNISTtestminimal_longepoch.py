@@ -229,39 +229,38 @@ def run_experiment(params):
     control_optimizer = torch.optim.Adam(control_net.parameters(), lr=float(control_lr))
     net_optimizer = torch.optim.Adam(net.parameters(), lr=float(learning_rate))
 
-    transform = transforms.Compose(
-        [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
-    )
+    # transform = transforms.Compose(
+    #     [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+    # )
 
-    train_dataset_full = datasets.MNIST(
-        root="local_data", train=True, transform=transform, download=True
-    )
-    test_dataset_full = datasets.MNIST(
-        root="local_data", train=False, transform=transform, download=True
-    )
+    # train_dataset_full = datasets.MNIST(
+    #     root="local_data", train=True, transform=transform, download=True
+    # )
+    # test_dataset_full = datasets.MNIST(
+    #     root="local_data", train=False, transform=transform, download=True
+    # )
 
-    train_loader = DataLoader(train_dataset_full, batch_size=1024, shuffle=True)
-    test_loader = DataLoader(test_dataset_full, batch_size=512, shuffle=False)
+    # train_loader = DataLoader(train_dataset_full, batch_size=1024, shuffle=True)
+    # test_loader = DataLoader(test_dataset_full, batch_size=512, shuffle=False)
 
     # train_dataloaders = []
     # test_dataloaders = []
     # task_ids = list(range(0, 1))
     # for task_id in task_ids:
-    # train_loader_god, test_loader_god = get_dataloaders(
-    #     task_id=task_id,
-    #     train_batch_size=128,
-    #     test_batch_size=128,
-    # )
+    train_dataloaders, test_dataloaders = get_dataloaders(
+        train_batch_size=128,
+        test_batch_size=128,
+    )
 
     # train_dataloaders.append(train_loader_god)
     # test_dataloaders.append(test_loader_god)
-
+    breakpoint()
     train_model(
         0,
         net,
         control_net,
-        train_loader,
-        test_loader,
+        train_dataloaders[0],
+        test_dataloaders[0],
         criterion,
         control_optimizer,
         net_optimizer,
