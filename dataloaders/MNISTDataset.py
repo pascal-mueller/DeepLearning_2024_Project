@@ -3,7 +3,7 @@ from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
 
 TASK_CLASSES = {
-    0: list(range(10)),  # all classes 0..9 (could be used for a test scenario)
+    0: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],  # God mode
     1: [0, 2, 4, 6],
     2: [1, 3],
     3: [5, 7, 9],
@@ -11,10 +11,20 @@ TASK_CLASSES = {
 }
 
 
-def get_dataloaders(task_id, train_batch_size=32, test_batch_size=32):
+def get_dataloaders(
+    train_batch_size=32,
+    test_batch_size=32,
+    shuffle_train=True,
+    return_indices=False,
+    return_masks=False,
+):
     """
-    Returns train_loader and test_loader for the union of classes from tasks 1..task_id.
-    If task_id=0, we default to 'all classes' (TASK_CLASSES[0]).
+    Returns train and test dataloaders for all tasks as well as god mode.
+    Optionally also returns the masks and indices for test and train data for
+    each task.
+
+    idx: 0 = godmode
+    idx: 1-4 = task 1-4
     """
     # Basic transform
     transform = transforms.Compose(
@@ -29,31 +39,60 @@ def get_dataloaders(task_id, train_batch_size=32, test_batch_size=32):
         root="local_data", train=False, transform=transform, download=True
     )
 
-    # Determine which classes to use:
-    if task_id == 0:
-        # For example, use all classes [0..9]
-        union_classes = TASK_CLASSES[0]
-    else:
-        # Union of tasks [1..task_id]
-        union_classes = []
-        for tid in range(1, task_id + 1):
-            union_classes.extend(TASK_CLASSES[tid])
-        union_classes = list(set(union_classes))  # deduplicate
+    # Get labels
+    train_labels = torch.tensor(train_dataset_full.targets)
+    test_labels = torch.tensor(test_dataset_full.targets)
 
-    # Filter the datasets by 'union_classes'
-    train_indices = [
-        i for i, y in enumerate(train_dataset_full.targets) if y in union_classes
-    ]
-    test_indices = [
-        i for i, y in enumerate(test_dataset_full.targets) if y in union_classes
-    ]
+    train_masks = []
+    test_masks = []
+    train_indices = []
+    test_indices = []
+    train_dataloaders = []
+    test_dataloaders = []
 
-    # Create subsets
-    train_subset = Subset(train_dataset_full, train_indices)
-    test_subset = Subset(test_dataset_full, test_indices)
+    # Create masks, indices and dataloaders for each task
+    for i, task_classes in enumerate(TASK_CLASSES.values()):
+        # Create masks
+        train_mask = torch.isin(train_labels, torch.tensor(task_classes))
+        test_mask = torch.isin(test_labels, torch.tensor(task_classes))
 
-    # Wrap in DataLoader
-    train_loader = DataLoader(train_subset, batch_size=train_batch_size, shuffle=True)
-    test_loader = DataLoader(test_subset, batch_size=test_batch_size, shuffle=False)
+        # Create indices
+        train_idxs = torch.nonzero(train_mask).squeeze()
+        test_idxs = torch.nonzero(test_mask).squeeze()
 
-    return train_loader, test_loader
+        # Create subsets
+        train_subset = Subset(train_dataset_full, train_idxs)
+        test_subset = Subset(test_dataset_full, test_idxs)
+
+        # Create dataloaders
+        train_dataloader = DataLoader(
+            train_subset, batch_size=train_batch_size, shuffle=shuffle_train
+        )
+        test_dataloader = DataLoader(
+            test_subset, batch_size=test_batch_size, shuffle=False
+        )
+
+        train_masks.append(train_masks)
+        test_masks.append(test_masks)
+        train_indices.append(train_indices)
+        test_indices.append(test_indices)
+        train_dataloaders.append(train_dataloader)
+        test_dataloaders.append(test_dataloader)
+
+    if return_indices and return_masks:
+        return (
+            train_dataloaders,
+            test_dataloaders,
+            train_indices,
+            test_indices,
+            train_masks,
+            test_masks,
+        )
+
+    if return_indices:
+        return train_dataloaders, test_dataloaders, train_indices, test_indices
+
+    if return_masks:
+        return train_dataloaders, test_dataloaders, train_masks, test_masks
+
+    return train_dataloaders, test_dataloaders
