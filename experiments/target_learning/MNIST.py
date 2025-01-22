@@ -225,10 +225,10 @@ def run_experiment(params, plot_fim=False):
 
     # Size of all the "activities" from Net we use as input
     input_size_net = 784  # Flattened image: 28 x 28
-    hidden_size_net = 100
+    hidden_size_net = 50
     output_size_net = 10
 
-    hidden_size_control = 100
+    hidden_size_control = 20
     output_size_control = 3 * hidden_size_net
 
     input_size_control = input_size_net + 3 * hidden_size_net + output_size_net
@@ -276,6 +276,10 @@ def run_experiment(params, plot_fim=False):
             l1_lambda,
         )
 
+        if plot_fim:
+            # We exlcude the first dataloader as it is not relevant for CL
+            plot_FIM(net, control_net, train_dataloaders[task_id], task_id)
+
         acc_train = evaluate_model(
             net, control_net, train_dataloaders[task_id], useSignals=True
         )
@@ -304,13 +308,6 @@ def run_experiment(params, plot_fim=False):
                 print(f"[with] Task {task_id} - {sub_task_id}: {acc_with:.2f}%")
                 print(f"[without] Task {task_id} - {sub_task_id}: {acc_without:.2f}%")
         print("\n")
-
-    if plot_fim:
-        train_dataloaders, _ = get_dataloaders(
-            train_batch_size=128, test_batch_size=128, seperate_data=True
-        )
-        # We exlcude the first dataloader as it is not relevant for CL
-        plot_FIM(net, control_net, train_dataloaders[1:])
 
 
 # Objective function for Optuna
@@ -394,10 +391,10 @@ if __name__ == "__main__":
 
     # Size of all the "activities" from Net we use as input
     input_size_net = 784  # Flattened image: 28 x 28
-    hidden_size_net = 100
+    hidden_size_net = 50
     output_size_net = 10
 
-    hidden_size_control = 100
+    hidden_size_control = 20
     output_size_control = 3 * hidden_size_net
 
     input_size_control = input_size_net + 3 * hidden_size_net + output_size_net
