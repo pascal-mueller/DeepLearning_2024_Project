@@ -19,8 +19,8 @@ from utils.fisher_information_metric import plot_FIM
 BEST_PARAMS = {
     "num_epochs": 5,
     "inner_epochs": 250,
-    "learning_rate": 1.651703048219e-05,
-    "control_lr": 1.18078126401598e-05,
+    "learning_rate": 1.651703048219e-04,
+    "control_lr": 1.18078126401598e-04,
     "control_threshold": 0.00603542302442579,
     "l1_lambda": 0.000141872888572121,
 }
@@ -42,13 +42,9 @@ def evaluate_model(net, control_net, test_loader, useSignals=False):
     with torch.no_grad():
         for batch_data, batch_labels in test_loader:
             net.reset_control_signals()
-
-            inp = net.flatten(batch_data)
-            h1 = net.layer1(inp)
-            h2 = net.layer2(net.h1_mrelu(h1))
-            h3 = net.layer3(net.h2_mrelu(h2))
-            output = net.layer4(net.h3_mrelu(h3))
-            current_activities = torch.cat([inp, h1, h2, h3, output], dim=1)
+            h1 = net.layer1(net.flatten(batch_data))
+            output = net(batch_data)
+            current_activities = torch.cat([net.flatten(batch_data), h1, output], dim=1)
 
             control_signals = control_net(current_activities)
             if useSignals:
@@ -94,12 +90,11 @@ def train_model(
             with torch.no_grad():
                 net.reset_control_signals()
 
-                inp = net.flatten(batch_data_god)
-                h1 = net.layer1(inp)
-                h2 = net.layer2(net.h1_mrelu(h1))
-                h3 = net.layer3(net.h2_mrelu(h2))
-                output = net.layer4(net.h3_mrelu(h3))
-                current_activities = torch.cat([inp, h1, h2, h3, output], dim=1)
+                h1 = net.layer1(net.flatten(batch_data_god))
+                output = net(batch_data_god)
+                current_activities = torch.cat(
+                    [net.flatten(batch_data_god), h1, output], dim=1
+                )
 
             old_loss = float("inf")
             converged = False
@@ -149,55 +144,40 @@ def train_model(
                     # net.set_control_signals(control_signals)
                     net.reset_control_signals()
 
-                    inp = net.flatten(task_data)
-                    h1 = net.layer1(inp)
-                    h2 = net.layer2(net.h1_mrelu(h1))
-                    h3 = net.layer3(net.h2_mrelu(h2))
-                    output = net.layer4(net.h3_mrelu(h3))
-                    current_activities = torch.cat([inp, h1, h2, h3, output], dim=1)
+                    h1 = net.layer1(net.flatten(task_data))
+                    output = net(task_data)
+                    current_activities = torch.cat(
+                        [net.flatten(task_data), h1, output], dim=1
+                    )
 
                     control_signals = control_net(current_activities)
                     # a.shape is [batch_size, hidden_size + output_size]
                     # control_signals = control_signals[no_god_mask]
                     a1 = control_signals[:, : net.hidden_size]
                     a2 = control_signals[:, net.hidden_size : 2 * net.hidden_size]
-                    a3 = control_signals[:, 2 * net.hidden_size :]
 
                     # Sander said, we can use 1.0 as the baseline
                     baseline_a1 = torch.ones_like(a1)
                     baseline_a2 = torch.ones_like(a2)
-                    baseline_a3 = torch.ones_like(a3)
                     a1_diff = a1 - baseline_a1
                     a2_diff = a2 - baseline_a2
-                    a3_diff = a3 - baseline_a3
 
                     # Layer 1 weight update
                     x = net.flatten(task_data)
-                    phi = net.h1_mrelu(net.layer1(x))
+                    phi = net.hidden_activations(net.layer1(x))
                     r_post_adjusted = phi * a1_diff
                     dw = r_post_adjusted.T @ x
                     dw = dw / x.shape[0]
                     net.layer1.weight.grad = dw
 
                     # Layer 2 weight update
-                    x2 = net.h1_mrelu(net.layer1(net.flatten(task_data)))
-                    phi2 = net.h2_mrelu(net.layer2(x2))
+                    x2 = net.hidden_activations(net.layer1(net.flatten(task_data)))
+                    phi2 = net.output_activations(net.layer2(x2))
 
                     r_post_adjusted2 = phi2 * a2_diff
                     dw2 = r_post_adjusted2.T @ x2
                     dw2 = dw2 / x2.shape[0]
                     net.layer2.weight.grad = dw2
-
-                    # Layer 3 weight update
-                    x3 = net.h2_mrelu(
-                        net.layer2(net.h1_mrelu(net.layer1(net.flatten(task_data))))
-                    )
-                    phi3 = net.h3_mrelu(net.layer3(x3))
-
-                    r_post_adjusted3 = phi3 * a3_diff
-                    dw3 = r_post_adjusted3.T @ x3
-                    dw3 = dw3 / x3.shape[0]
-                    net.layer3.weight.grad = dw3
 
                     # print(dw.mean(), dw2.mean(), dw3.mean())
 
@@ -225,13 +205,13 @@ def run_experiment(params, plot_fim=False):
 
     # Size of all the "activities" from Net we use as input
     input_size_net = 784  # Flattened image: 28 x 28
-    hidden_size_net = 50
+    hidden_size_net = 100
     output_size_net = 10
 
-    hidden_size_control = 20
-    output_size_control = 3 * hidden_size_net
+    hidden_size_control = 100
+    output_size_control = 2 * hidden_size_net
 
-    input_size_control = input_size_net + 3 * hidden_size_net + output_size_net
+    input_size_control = input_size_net + hidden_size_net + output_size_net
 
     net = Net(
         input_size=input_size_net,

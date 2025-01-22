@@ -16,13 +16,10 @@ from utils.constants import DATA_ROOT
 from utils.colored_prints import *
 
 
-def get_classes(task_id):
-    classes = []
-
-    for i in range(1, task_id + 1):
-        classes += TASK_CLASSES[i]
-
-    return torch.tensor(classes)
+def print_green(text):
+    green_color_code = "\033[92m"
+    reset_color_code = "\033[0m"
+    print(f"{green_color_code}{text}{reset_color_code}")
 
 
 def evaluate_model(net, control_net, test_loader, useSignals=False):
@@ -58,8 +55,8 @@ def train_model(
     task_id,
     net,
     control_net,
-    train_loader,
-    test_loader,
+    train_loader_god,
+    test_loader_god,
     criterion,
     control_optimizer,
     net_optimizer,
@@ -68,18 +65,14 @@ def train_model(
     inner_epochs,
     l1_lambda,
 ):
-    pbar = tqdm(range(num_epochs), desc=f"Epochs", leave=False, disable=False)
+    pbar = tqdm(range(num_epochs), desc=f"Epochs", leave=False, disable=True)
 
     for epoch in pbar:
         # print(f"Press any key to start epoch {epoch}")
         # input()
         batch_losses = []
 
-        classes = get_classes(task_id)
-
-        for batch_id, (batch_data_god, batch_labels_god) in enumerate(train_loader):
-            current_task_mask = torch.isin(batch_labels_god, classes)
-
+        for batch_id, (batch_data_god, batch_labels_god) in enumerate(train_loader_god):
             # Get current network activities
             with torch.no_grad():
                 net.reset_control_signals()
@@ -132,20 +125,10 @@ def train_model(
             # print(f"{batch_id}/{len(train_loader_god)} ", total_control_loss.item())
 
             if control_loss.item() > 0.01:
-                task_data = batch_data_god[current_task_mask]
-
                 batch_losses.append(total_control_loss.item())
                 with torch.no_grad():
                     # net.set_control_signals(control_signals)
                     net.reset_control_signals()
-
-                    inp = net.flatten(task_data)
-                    h1 = net.layer1(inp)
-                    h2 = net.layer2(net.h1_mrelu(h1))
-                    h3 = net.layer3(net.h2_mrelu(h2))
-                    output = net.layer4(net.h3_mrelu(h3))
-                    current_activities = torch.cat([inp, h1, h2, h3, output], dim=1)
-
                     control_signals = control_net(current_activities)
                     # a.shape is [batch_size, hidden_size + output_size]
                     # control_signals = control_signals[no_god_mask]
@@ -162,7 +145,7 @@ def train_model(
                     a3_diff = a3 - baseline_a3
 
                     # Layer 1 weight update
-                    x = net.flatten(task_data)
+                    x = net.flatten(batch_data_god)
                     phi = net.h1_mrelu(net.layer1(x))
                     r_post_adjusted = phi * a1_diff
                     dw = r_post_adjusted.T @ x
@@ -170,7 +153,7 @@ def train_model(
                     net.layer1.weight.grad = dw
 
                     # Layer 2 weight update
-                    x2 = net.h1_mrelu(net.layer1(net.flatten(task_data)))
+                    x2 = net.h1_mrelu(net.layer1(net.flatten(batch_data_god)))
                     phi2 = net.h2_mrelu(net.layer2(x2))
 
                     r_post_adjusted2 = phi2 * a2_diff
@@ -180,7 +163,9 @@ def train_model(
 
                     # Layer 3 weight update
                     x3 = net.h2_mrelu(
-                        net.layer2(net.h1_mrelu(net.layer1(net.flatten(task_data))))
+                        net.layer2(
+                            net.h1_mrelu(net.layer1(net.flatten(batch_data_god)))
+                        )
                     )
                     phi3 = net.h3_mrelu(net.layer3(x3))
 
@@ -196,9 +181,9 @@ def train_model(
         epoch_loss = sum(batch_losses) / len(batch_losses) if batch_losses else 0
         pbar.set_postfix(avg_epoch_loss=epoch_loss)
 
-        acc = evaluate_model(net, control_net, test_loader, useSignals=True)
+        acc = evaluate_model(net, control_net, test_loader_god, useSignals=True)
 
-        print(f"Task {task_id} - Epoch {epoch}: {acc:.2f}%")
+        # print(f"Task {task_id} - Epoch {epoch}: {acc:.2f}%")
         # if acc > 80:
         #     print("Early stopping")
         #     break
@@ -242,6 +227,24 @@ def run_experiment(params):
     control_optimizer = torch.optim.Adam(control_net.parameters(), lr=float(control_lr))
     net_optimizer = torch.optim.Adam(net.parameters(), lr=float(learning_rate))
 
+    # transform = transforms.Compose(
+    #     [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+    # )
+
+    # train_dataset_full = datasets.MNIST(
+    #     root="local_data", train=True, transform=transform, download=True
+    # )
+    # test_dataset_full = datasets.MNIST(
+    #     root="local_data", train=False, transform=transform, download=True
+    # )
+
+    # train_loader = DataLoader(train_dataset_full, batch_size=1024, shuffle=True)
+    # test_loader = DataLoader(test_dataset_full, batch_size=512, shuffle=False)
+
+    # train_dataloaders = []
+    # test_dataloaders = []
+    # task_ids = list(range(0, 1))
+    # for task_id in task_ids:
     train_dataloaders, test_dataloaders = get_dataloaders(
         train_batch_size=128,
         test_batch_size=128,
@@ -250,26 +253,26 @@ def run_experiment(params):
     # train_dataloaders.append(train_loader_god)
     # test_dataloaders.append(test_loader_god)
 
+    train_model(
+        0,
+        net,
+        control_net,
+        train_dataloaders[0],
+        test_dataloaders[0],
+        criterion,
+        control_optimizer,
+        net_optimizer,
+        control_threshold,
+        num_epochs,
+        inner_epochs,
+        l1_lambda,
+    )
+
     for task_id in range(1, 5):
         if task_id == 0:
             print_info("Training on all data")
         else:
             print_info(f"Training on Task {task_id}")
-
-        train_model(
-            task_id,
-            net,
-            control_net,
-            train_dataloaders[task_id],
-            test_dataloaders[task_id],
-            criterion,
-            control_optimizer,
-            net_optimizer,
-            control_threshold,
-            num_epochs,
-            inner_epochs,
-            l1_lambda,
-        )
 
         acc_train = evaluate_model(
             net, control_net, train_dataloaders[task_id], useSignals=True

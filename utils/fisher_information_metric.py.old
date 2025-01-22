@@ -1,0 +1,97 @@
+import os
+import pathlib
+import torch
+import torch.nn as nn
+import matplotlib.pyplot as plt
+from torch.utils.data import Dataset, DataLoader, Subset
+import numpy as np
+from collections import Counter
+
+
+def compute_fisher(model_grads, data_loader, target_learning=False):
+    """
+    Compute the diagonal Fisher Information for 'net' w.r.t.
+    cross-entropy loss on the given data_loader.
+    Returns:
+        A dict mapping param name -> FIM diagonal (tensor of same shape as param).
+    """
+    total_samples = len(data_loader.dataset)
+
+    fisher_dict = {}
+    for name, grads in model_grads.items():
+        fisher_dict[name] = grads**2 / total_samples
+
+    return fisher_dict
+
+
+def flatten_fisher(fisher_dict):
+    """
+    Flatten Fisher information from a dictionary into a single 1D numpy array,
+    maintaining a consistent order of parameters.
+    """
+    # Sort keys to ensure consistent order across tasks
+    sorted_items = sorted(fisher_dict.items(), key=lambda kv: kv[0])
+    # Concatenate all flattened tensors and convert to numpy
+    fisher_flat = torch.cat([param.flatten() for _, param in sorted_items])
+    return fisher_flat.cpu().numpy()
+
+
+def plot_fisher_information_metric(exp_name):
+    exp_dir = pathlib.Path(os.path.join("results", exp_name)).resolve()
+
+    control_net_paths = exp_dir.glob("control_net_*.pt")
+    net_paths = exp_dir.glob("net_*.pt")
+    task_data_paths = exp_dir.glob("task_*_data.pt")
+
+    control_nets_grads = [torch.load(path)["grads"] for path in control_net_paths]
+    nets_grads = [torch.load(path)["grads"] for path in net_paths]
+    task_data = [torch.load(path) for path in task_data_paths]
+
+    fisher_control_nets = []
+    fisher_nets = []
+    for control_net_grads, net_grads, data in zip(
+        control_nets_grads, nets_grads, task_data
+    ):
+        test_loader = DataLoader(data, batch_size=32, shuffle=True)
+
+        fisher_control_net = compute_fisher(control_net_grads, test_loader)
+        fisher_net = compute_fisher(net_grads, test_loader, target_learning=True)
+
+        fisher_control_net_flattened = flatten_fisher(fisher_control_net)
+        fisher_net_flattened = flatten_fisher(fisher_net)
+
+        fisher_control_nets.append(fisher_control_net_flattened)
+        fisher_nets.append(fisher_net_flattened)
+
+    param_indices_net = range(len(fisher_nets[0]))
+    params_indices_control_net = range(len(fisher_control_nets[0]))
+    fig, axes = plt.subplots(len(fisher_nets), 2, figsize=(12, 10), sharex=True)
+
+    colors = ["blue", "green", "red", "purple", "orange", "brown", "pink"]
+    for i, ax in enumerate(axes):
+        # Plot Fisher Information for Task i
+
+        # Control Net
+        axes[i][0].plot(param_indices_net, fisher_nets[i], color=colors[i])
+        axes[i][0].set_title(f"Fisher Information for Control Net for Task {i}")
+        axes[i][0].set_ylabel("Fisher Information (F)")
+        axes[i][0].grid(True)
+
+        breakpoint()
+        # Net
+        axes[i][1].plot(
+            params_indices_control_net, fisher_control_nets[i], color=colors[i]
+        )
+        axes[i][1].set_title(f"Fisher Information for Net Task {i}")
+        axes[i][1].set_ylabel("Fisher Information (F)")
+        axes[i][1].grid(True)
+
+    axes[-1][0].set_xlabel("Parameter Index (θ)")
+    axes[-1][1].set_xlabel("Parameter Index (θ)")
+
+    plt.tight_layout()
+    plt.show()
+
+
+if __name__ == "__main__":
+    plot_fisher_information_metric("full_XOR")
