@@ -53,3 +53,6 @@ You can also submit the job directly, I never do that though so no idea how.
 See wiki. I suggest starting an interactive shell with tmux. if you use tmux,
 note down the login node so you can ssh onto it later on since the tmux session
 is "login node specific".
+
+# Commands used in paper
+- `python -m experiments.target_learning.MNIST` checks our exp. setup on the whole MNIST dataset.
